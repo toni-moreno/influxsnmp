@@ -21,13 +21,18 @@ func (cfg *InfluxConfig) BP() *client.BatchPoints {
 	}
 }
 
-func makePoint(host string, val *pduValue, when time.Time) client.Point {
+func makePoint(host string, TagMap map[string]string, val *pduValue, when time.Time) client.Point {
+	FullTags := map[string]string{
+		"host":   host,
+		"column": val.column,
+	}
+
+	for key, value := range TagMap {
+		FullTags[key] = value
+	}
 	return client.Point{
 		Measurement: val.name,
-		Tags: map[string]string{
-			"host":   host,
-			"column": val.column,
-		},
+		Tags:        FullTags,
 		Fields: map[string]interface{}{
 			"value": val.value,
 		},

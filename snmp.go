@@ -108,7 +108,7 @@ func snmpStats(snmp *gosnmp.GoSNMP, cfg *SnmpConfig) error {
 			if val.value == nil {
 				continue
 			}
-			pt := makePoint(cfg.Host, val, now)
+			pt := makePoint(cfg.Host, cfg.TagMap, val, now)
 			bps.Points = append(bps.Points, pt)
 
 		}
@@ -129,7 +129,7 @@ func bulkStats(snmp *gosnmp.GoSNMP, cfg *SnmpConfig) error {
 	addPacket := func(pdu gosnmp.SnmpPDU) error {
 		val := bulkPoint(cfg, pdu)
 		if val != nil && val.value != nil {
-			pt := makePoint(cfg.Host, val, now)
+			pt := makePoint(cfg.Host, cfg.TagMap, val, now)
 			bps.Points = append(bps.Points, pt)
 		}
 		return nil
@@ -169,7 +169,7 @@ func snmpClient(s *SnmpConfig) (*gosnmp.GoSNMP, error) {
 	client := &gosnmp.GoSNMP{
 		Target:    s.Host,
 		Port:      uint16(s.Port),
-		Community: s.Public,
+		Community: s.Community,
 		Version:   gosnmp.Version2c,
 		Timeout:   time.Duration(s.Timeout) * time.Second,
 		Retries:   s.Retries,

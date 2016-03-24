@@ -15,21 +15,23 @@ import (
 	"github.com/influxdata/influxdb/client"
 	"github.com/kardianos/osext"
 	"github.com/soniah/gosnmp"
-	"gopkg.in/gcfg.v1"
+	"github.com/spf13/viper"
 )
 
 const layout = "2006-01-02 15:04:05"
 
 type SnmpConfig struct {
-	Host      string `gcfg:"host"`
-	Public    string `gcfg:"community"`
-	Port      int    `gcfg:"port"`
-	Retries   int    `gcfg:"retries"`
-	Timeout   int    `gcfg:"timeout"`
-	Repeat    int    `gcfg:"repeat"`
-	Freq      int    `gcfg:"freq"`
-	PortFile  string `gcfg:"portfile"`
-	Config    string `gcfg:"config"`
+	Host      string   `toml:"host"`
+	Community string   `toml:"community"`
+	Port      int      `toml:"port"`
+	Retries   int      `toml:"retries"`
+	Timeout   int      `toml:"timeout"`
+	Repeat    int      `toml:"repeat"`
+	Freq      int      `toml:"freq"`
+	PortFile  string   `toml:"portfile"`
+	Config    string   `toml:"config"`
+	ExtraTags []string `toml:"extra-tags"`
+	TagMap    map[string]string
 	labels    map[string]string
 	asName    map[string]string
 	asOID     map[string]string
@@ -45,12 +47,12 @@ type SnmpConfig struct {
 }
 
 type InfluxConfig struct {
-	Host      string `gcfg:"host"`
-	Port      int    `gcfg:"port"`
-	DB        string `gcfg:"db"`
-	User      string `gcfg:"user"`
-	Password  string `gcfg:"password"`
-	Retention string `gcfg:"retention"`
+	Host      string `toml:"host"`
+	Port      int    `toml:"port"`
+	DB        string `toml:"db"`
+	User      string `toml:"user"`
+	Password  string `toml:"password"`
+	Retention string `toml:"retention"`
 	iChan     chan *client.BatchPoints
 	conn      *client.Client
 	Sent      int64
@@ -58,18 +60,18 @@ type InfluxConfig struct {
 }
 
 type HTTPConfig struct {
-	Port int `gcfg:"port"`
+	Port int `toml:"port"`
 }
 
 type GeneralConfig struct {
-	LogDir  string `gcfg:"logdir"`
-	OidFile string `gcfg:"oidfile"`
+	LogDir  string `toml:"logdir"`
+	OidFile string `toml:"oidfile"`
 }
 
 type MibConfig struct {
-	Scalers bool     `gcfg:"scalers"`
-	Name    string   `gcfg:"name"`
-	Columns []string `gcfg:"column"`
+	Scalers bool     `toml:"scalers"`
+	Name    string   `toml:"name"`
+	Columns []string `toml:"column"`
 }
 
 var (
@@ -86,7 +88,7 @@ var (
 	appdir, _     = osext.ExecutableFolder()
 	logDir        = filepath.Join(appdir, "log")
 	oidFile       = filepath.Join(appdir, "oids.txt")
-	configFile    = filepath.Join(appdir, "config.gcfg")
+	configFile    = filepath.Join(appdir, "config.toml")
 	errorLog      *os.File
 	errorDuration = time.Duration(10 * time.Minute)
 	errorPeriod   = errorDuration.String()
@@ -206,7 +208,9 @@ func (c *SnmpConfig) OIDs() {
 		fatal("NO MIB!")
 	}
 	c.oids = []string{}
+	//Debug fmt.Printf("%+v\n", c.mib)
 	for _, col := range c.mib.Columns {
+		//Debug fmt.Printf("%+v\n", col)
 		base, ok := nameToOid[col]
 		if !ok {
 			fatal("no oid for col:", col)
@@ -258,20 +262,22 @@ func init() {
 	f := flags()
 	f.Parse(os.Args[1:])
 	// now load up config settings
-	if _, err := os.Stat(configFile); err != nil {
-		log.Fatal(err)
+	if _, err := os.Stat(configFile); err == nil {
+		viper.SetConfigFile(configFile)
 	} else {
-		data, err := ioutil.ReadFile(configFile)
-		if err != nil {
-			log.Fatal(err)
-		}
-		err = gcfg.ReadStringInto(&cfg, string(data))
-		if err != nil {
-			log.Fatalf("Failed to parse gcfg data: %s", err)
-		}
-		httpPort = cfg.HTTP.Port
+		viper.SetConfigName("config")
+		viper.AddConfigPath("/opt/influxsnmp/")
+		viper.AddConfigPath(".")
 	}
-
+	err := viper.ReadInConfig()
+	if err != nil {
+		panic(fmt.Errorf("Fatal error config file: %s \n", err))
+	}
+	err = viper.Unmarshal(&cfg)
+	if err != nil {
+		panic(fmt.Errorf("unable to decode into struct, %v \n", err))
+	}
+	//Debug	fmt.Printf("%+v\n", cfg)
 	if len(cfg.General.LogDir) > 0 {
 		logDir = cfg.General.LogDir
 	}
@@ -293,6 +299,7 @@ func init() {
 	}
 
 	for _, s := range cfg.Snmp {
+		//Debug fmt.Printf("%+v\n", s)
 		s.LoadPorts()
 		s.debugging = make(chan bool)
 		s.enabled = make(chan chan bool)
@@ -304,6 +311,7 @@ func init() {
 				fatal("No mib data found for config:", name)
 			}
 		}
+		//Debug fmt.Printf("C.MIB: %+v\n", c.mib)
 		c.Translate()
 		c.OIDs()
 		if c.Freq == 0 {
@@ -325,6 +333,22 @@ func init() {
 	f = flags()
 	f.Parse(os.Args[1:])
 	os.Mkdir(logDir, 0755)
+
+	//construc Extra tag map
+	for name, c := range cfg.Snmp {
+		if len(c.ExtraTags) > 0 {
+			c.TagMap = make(map[string]string)
+			for _, tag := range c.ExtraTags {
+				s := strings.Split(tag, "=")
+				key, value := s[0], s[1]
+				c.TagMap[key] = value
+			}
+		} else {
+			fmt.Printf("No map detected in %s\n", name)
+		}
+		//Debug fmt.Printf("TAG ARRAY[ %s ]: %+v\n", name, c.ExtraTags)
+		//Debug fmt.Printf("EXTRA TAGS MAP[ %s ]: %+v\n", name, c.TagMap)
+	}
 
 	// now make sure each snmp device has a db
 	for name, c := range cfg.Snmp {
