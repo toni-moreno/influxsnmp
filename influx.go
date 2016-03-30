@@ -3,65 +3,66 @@ package main
 import (
 	"fmt"
 	"log"
-	"net/url"
 	"strings"
 	"time"
-
-	"github.com/influxdata/influxdb/client"
+	"github.com/influxdata/influxdb/client/v2"
 )
 
 func (cfg *InfluxConfig) BP() *client.BatchPoints {
 	if len(cfg.Retention) == 0 {
 		cfg.Retention = "default"
 	}
-	return &client.BatchPoints{
-		Points:          make([]client.Point, 0, maxOids),
+	bp, _ := client.NewBatchPoints(client.BatchPointsConfig{
 		Database:        cfg.DB,
 		RetentionPolicy: cfg.Retention,
-	}
+		Precision:       "ns", //Default precision for Time lib
+	})
+	return &bp
 }
 
-func makePoint(host string, TagMap map[string]string, val *pduValue, when time.Time) client.Point {
+func makePoint(host string, TagMap map[string]string, val *pduValue, when time.Time) *client.Point {
 	FullTags := map[string]string{
-		"host":   host,
-		"column": val.column,
+		"host": host,
+		"port": val.column,
 	}
 
 	for key, value := range TagMap {
 		FullTags[key] = value
 	}
-	return client.Point{
-		Measurement: val.name,
-		Tags:        FullTags,
-		Fields: map[string]interface{}{
+	pt, _ := client.NewPoint(
+		val.name,
+		FullTags,
+		map[string]interface{}{
 			"value": val.value,
 		},
-		Time: when,
-	}
+		when,
+	)
+	return pt
 }
 
 func (cfg *InfluxConfig) Connect() error {
-	u, err := url.Parse(fmt.Sprintf("http://%s:%d", cfg.Host, cfg.Port))
+	/*u, err := url.Parse(fmt.Sprintf("http://%s:%d", cfg.Host, cfg.Port))
 	if err != nil {
 		return err
-	}
+	}*/
 
-	conf := client.Config{
-		URL:      *u,
+	conf := client.HTTPConfig{
+		Addr:     fmt.Sprintf("http://%s:%d", cfg.Host, cfg.Port),
 		Username: cfg.User,
 		Password: cfg.Password,
 	}
-
-	cfg.conn, err = client.NewClient(conf)
+	cli, err := client.NewHTTPClient(conf)
+	cfg.client = cli
 	if err != nil {
 		return err
 	}
 
-	_, _, err = cfg.conn.Ping()
+	_, _, err = cfg.client.Ping(time.Duration(5))
 	return err
 }
 
 func (cfg *InfluxConfig) Init() {
+
 	if verbose {
 		log.Println("Connecting to:", cfg.Host)
 	}
@@ -103,7 +104,7 @@ func influxEmitter(cfg *InfluxConfig) {
 
 			// keep trying until we get it (don't drop the data)
 			for {
-				if _, err := cfg.conn.Write(*data); err != nil {
+				if err := cfg.client.Write(*data); err != nil {
 					cfg.incErrors()
 					log.Println("influxdb write error:", err)
 					// try again in a bit

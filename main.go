@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/influxdata/influxdb/client"
+	"github.com/influxdata/influxdb/client/v2"
 	"github.com/kardianos/osext"
 	"github.com/soniah/gosnmp"
 	"github.com/spf13/viper"
@@ -54,7 +54,7 @@ type InfluxConfig struct {
 	Password  string `toml:"password"`
 	Retention string `toml:"retention"`
 	iChan     chan *client.BatchPoints
-	conn      *client.Client
+	client    client.Client
 	Sent      int64
 	Errors    int64
 }
@@ -96,6 +96,7 @@ var (
 	errorName     string
 
 	cfg = struct {
+		Selfmon SelfMonConfig
 		Snmp    map[string]*SnmpConfig
 		Mibs    map[string]*MibConfig
 		Influx  map[string]*InfluxConfig
@@ -363,6 +364,15 @@ func init() {
 		}
 		c.Influx.Init()
 	}
+	//make sure the selfmon has a deb
+	if cfg.Selfmon.Enabled {
+		cfg.Selfmon.Init()
+		cfg.Selfmon.Influx, ok = cfg.Influx["*"]
+		cfg.Selfmon.Influx.Init()
+		fmt.Printf("SELFMON enabled %+vn\n", cfg.Selfmon)
+	} else {
+		fmt.Printf("SELFMON disabled %+vn\n", cfg.Selfmon)
+	}
 
 	var ferr error
 	errorName = fmt.Sprintf("error.%d.log", cfg.HTTP.Port)
@@ -388,6 +398,10 @@ func main() {
 	defer func() {
 		errorLog.Close()
 	}()
+	if cfg.Selfmon.Enabled {
+		cfg.Selfmon.ReportStats(&wg)
+	}
+
 	for _, c := range cfg.Snmp {
 		wg.Add(1)
 		go c.Gather(repeat, &wg)
