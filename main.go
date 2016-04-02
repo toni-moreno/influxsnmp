@@ -21,21 +21,34 @@ import (
 const layout = "2006-01-02 15:04:05"
 
 type SnmpConfig struct {
-	Host      string   `toml:"host"`
-	Community string   `toml:"community"`
-	Port      int      `toml:"port"`
-	Retries   int      `toml:"retries"`
-	Timeout   int      `toml:"timeout"`
-	Repeat    int      `toml:"repeat"`
-	Freq      int      `toml:"freq"`
-	PortFile  string   `toml:"portfile"`
-	Config    string   `toml:"config"`
+	//snmp connection config
+	Host    string `toml:"host"`
+	Port    int    `toml:"port"`
+	Retries int    `toml:"retries"`
+	Timeout int    `toml:"timeout"`
+	Repeat  int    `toml:"repeat"`
+	//snmp auth  config
+	snmpversion string `toml:"snmpversion"`
+	Community   string `toml:"community"`
+	v3seclevel  string `toml:"v3seclevel"`
+	v3authuser  string `toml:"v3authuser"`
+	v3authpass  string `toml:"v3authpass"`
+	v3authprot  string `toml:"v3authprot"`
+	v3privpass  string `toml:"v3privpass"`
+	v3privprot  string `toml:"v3privprot"`
+	//snmp runtime config
+	Freq     int    `toml:"freq"`
+	PortFile string `toml:"portfile"`
+	Config   string `toml:"config"`
+	//influx tags
 	ExtraTags []string `toml:"extra-tags"`
 	TagMap    map[string]string
-	labels    map[string]string
-	asName    map[string]string
-	asOID     map[string]string
-	oids      []string
+	//label translate
+	labels map[string]string
+	asName map[string]string
+	asOID  map[string]string
+	oids   []string
+	//pointe to objects
 	mib       *MibConfig
 	Influx    *InfluxConfig
 	LastError time.Time

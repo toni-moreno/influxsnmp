@@ -169,14 +169,87 @@ func printSnmpNames(c *SnmpConfig) {
 }
 
 func snmpClient(s *SnmpConfig) (*gosnmp.GoSNMP, error) {
-	client := &gosnmp.GoSNMP{
-		Target:    s.Host,
-		Port:      uint16(s.Port),
-		Community: s.Community,
-		Version:   gosnmp.Version2c,
-		Timeout:   time.Duration(s.Timeout) * time.Second,
-		Retries:   s.Retries,
+	var client *gosnmp.GoSNMP
+	switch {
+	case s.snmpversion == "1":
+		client = &gosnmp.GoSNMP{
+			Target:  s.Host,
+			Port:    uint16(s.Port),
+			Version: gosnmp.Version1,
+			Timeout: time.Duration(s.Timeout) * time.Second,
+			Retries: s.Retries,
+		}
+	case s.snmpversion == "2c":
+
+		//validate comunity
+
+		client = &gosnmp.GoSNMP{
+			Target:    s.Host,
+			Port:      uint16(s.Port),
+			Community: s.Community,
+			Version:   gosnmp.Version2c,
+			Timeout:   time.Duration(s.Timeout) * time.Second,
+			Retries:   s.Retries,
+		}
+	case s.snmpversion == "3":
+
+		authpmap := map[string]gosnmp.SnmpV3AuthProtocol{
+			"NoAuth": gosnmp.NoAuth,
+			"MD5":    gosnmp.MD5,
+			"SHA":    gosnmp.SHA,
+		}
+		privpmap := map[string]gosnmp.SnmpV3PrivProtocol{
+			"NoPriv": gosnmp.NoPriv,
+			"DES":    gosnmp.DES,
+			"AES":    gosnmp.AES,
+		}
+		//validate correct s.authuser
+
+		var UsmParams *gosnmp.UsmSecurityParameters
+
+		switch {
+
+		case s.v3seclevel == "NoAuthNoPriv":
+			UsmParams = &gosnmp.UsmSecurityParameters{
+				UserName:                 s.v3authuser,
+				AuthenticationProtocol:   gosnmp.NoAuth,
+				AuthenticationPassphrase: "",
+				PrivacyProtocol:          gosnmp.NoPriv,
+				PrivacyPassphrase:        "",
+			}
+		case s.v3seclevel == "AuthNoPriv":
+			//validate s.authpass s.authprot
+			UsmParams = &gosnmp.UsmSecurityParameters{
+				UserName:                 s.v3authuser,
+				AuthenticationProtocol:   authpmap[s.v3authprot],
+				AuthenticationPassphrase: s.v3authpass,
+				PrivacyProtocol:          gosnmp.NoPriv,
+				PrivacyPassphrase:        "",
+			}
+		case s.v3seclevel == "AuthPriv":
+			//validate s.authpass s.authprot
+			//validate s.privpass s.privprot
+			UsmParams = &gosnmp.UsmSecurityParameters{
+				UserName:                 s.v3authuser,
+				AuthenticationProtocol:   authpmap[s.v3authprot],
+				AuthenticationPassphrase: s.v3authpass,
+				PrivacyProtocol:          privpmap[s.v3privprot],
+				PrivacyPassphrase:        s.v3privpass,
+			}
+		}
+
+		client = &gosnmp.GoSNMP{
+			Target:             s.Host,
+			Port:               uint16(s.Port),
+			Version:            gosnmp.Version3,
+			Timeout:            time.Duration(s.Timeout) * time.Second,
+			Retries:            s.Retries,
+			SecurityModel:      gosnmp.UserSecurityModel,
+			MsgFlags:           gosnmp.AuthPriv,
+			SecurityParameters: UsmParams,
+		}
 	}
+
 	err := client.Connect()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
