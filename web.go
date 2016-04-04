@@ -95,7 +95,7 @@ SNMP Debugging:<button type="submit" value="{{.DebugAction}}">{{.DebugAction}}</
 </html>
 `
 
-const errors = `<!DOCTYPE html>
+const errs = `<!DOCTYPE html>
 <html lang="en" xml:lang="en">
 <head>
 <title>Errors</title>
@@ -129,7 +129,7 @@ const logfiles = `<!DOCTYPE html>
 `
 
 var tmpl = template.Must(template.New("home").Parse(page))
-var errs = template.Must(template.New("errors").Parse(errors))
+var errs_t = template.Must(template.New("errs").Parse(errs))
 var logs = template.Must(template.New("logs").Parse(logfiles))
 
 func HomePage(w http.ResponseWriter, r *http.Request) {
@@ -174,7 +174,7 @@ func ErrorsPage(w http.ResponseWriter, r *http.Request) {
 		Errors:  getErrors(),
 		LogFile: errorName,
 	}
-	if err := errs.Execute(w, data); err != nil {
+	if err := errs_t.Execute(w, data); err != nil {
 		errLog("home error:%s\n", err)
 	}
 }

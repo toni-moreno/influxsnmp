@@ -7,11 +7,13 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	//	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	//"github.com/go-errors/errors"
 	"github.com/influxdata/influxdb/client/v2"
 	"github.com/kardianos/osext"
 	"github.com/soniah/gosnmp"
@@ -28,18 +30,19 @@ type SnmpConfig struct {
 	Timeout int    `toml:"timeout"`
 	Repeat  int    `toml:"repeat"`
 	//snmp auth  config
-	snmpversion string `toml:"snmpversion"`
+	SnmpVersion string `toml:"snmpversion"`
 	Community   string `toml:"community"`
-	v3seclevel  string `toml:"v3seclevel"`
-	v3authuser  string `toml:"v3authuser"`
-	v3authpass  string `toml:"v3authpass"`
-	v3authprot  string `toml:"v3authprot"`
-	v3privpass  string `toml:"v3privpass"`
-	v3privprot  string `toml:"v3privprot"`
+	V3SecLevel  string `toml:"v3seclevel"`
+	V3AuthUser  string `toml:"v3authuser"`
+	V3AuthPass  string `toml:"v3authpass"`
+	V3AuthProt  string `toml:"v3authprot"`
+	V3PrivPass  string `toml:"v3privpass"`
+	V3PrivProt  string `toml:"v3privprot"`
 	//snmp runtime config
 	Freq     int    `toml:"freq"`
 	PortFile string `toml:"portfile"`
 	Config   string `toml:"config"`
+	Debug    bool   `toml:"debug"`
 	//influx tags
 	ExtraTags []string `toml:"extra-tags"`
 	TagMap    map[string]string
@@ -181,8 +184,10 @@ func (c *SnmpConfig) Translate() {
 	if err != nil {
 		fatal("Client connect error:", err)
 	}
-	defer client.Conn.Close()
-	spew("Looking up column names for:", c.Host)
+	defer func() {
+		client.Conn.Close()
+	}()
+	spew("Looking up column names for:", c.Host, "NAMES", nameOid)
 	pdus, err := client.BulkWalkAll(nameOid)
 	if err != nil {
 		fatal("SNMP bulkwalk error", err)

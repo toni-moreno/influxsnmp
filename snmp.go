@@ -1,8 +1,10 @@
 package main
 
 import (
+	ers "errors"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -157,6 +159,7 @@ func printSnmpNames(c *SnmpConfig) {
 	}
 	defer client.Conn.Close()
 	pdus, err := client.BulkWalkAll(nameOid)
+	//pdus, err := client.WalkAll(nameOid)
 	if err != nil {
 		fatal("SNMP bulkwalk error", err)
 	}
@@ -170,28 +173,35 @@ func printSnmpNames(c *SnmpConfig) {
 
 func snmpClient(s *SnmpConfig) (*gosnmp.GoSNMP, error) {
 	var client *gosnmp.GoSNMP
-	switch {
-	case s.snmpversion == "1":
+	hostIPs, _ := net.LookupHost(s.Host)
+	if len(hostIPs) > 1 {
+		log.Println("Lookup for %s host has more than one IP: %v", s.Host, hostIPs)
+	}
+	switch s.SnmpVersion {
+	case "1":
 		client = &gosnmp.GoSNMP{
-			Target:  s.Host,
+			Target:  hostIPs[0],
 			Port:    uint16(s.Port),
 			Version: gosnmp.Version1,
 			Timeout: time.Duration(s.Timeout) * time.Second,
 			Retries: s.Retries,
 		}
-	case s.snmpversion == "2c":
-
-		//validate comunity
+	case "2c":
+		//validate community
+		if len(s.Community) < 1 {
+			log.Printf("Error no community found %s in host %s", s.Community, s.Host)
+			return nil, ers.New("Error on snmp community")
+		}
 
 		client = &gosnmp.GoSNMP{
-			Target:    s.Host,
+			Target:    hostIPs[0],
 			Port:      uint16(s.Port),
 			Community: s.Community,
 			Version:   gosnmp.Version2c,
 			Timeout:   time.Duration(s.Timeout) * time.Second,
 			Retries:   s.Retries,
 		}
-	case s.snmpversion == "3":
+	case "3":
 
 		authpmap := map[string]gosnmp.SnmpV3AuthProtocol{
 			"NoAuth": gosnmp.NoAuth,
@@ -203,43 +213,87 @@ func snmpClient(s *SnmpConfig) (*gosnmp.GoSNMP, error) {
 			"DES":    gosnmp.DES,
 			"AES":    gosnmp.AES,
 		}
-		//validate correct s.authuser
+		UsmParams := new(gosnmp.UsmSecurityParameters)
 
-		var UsmParams *gosnmp.UsmSecurityParameters
-
-		switch {
-
-		case s.v3seclevel == "NoAuthNoPriv":
-			UsmParams = &gosnmp.UsmSecurityParameters{
-				UserName:                 s.v3authuser,
-				AuthenticationProtocol:   gosnmp.NoAuth,
-				AuthenticationPassphrase: "",
-				PrivacyProtocol:          gosnmp.NoPriv,
-				PrivacyPassphrase:        "",
-			}
-		case s.v3seclevel == "AuthNoPriv":
-			//validate s.authpass s.authprot
-			UsmParams = &gosnmp.UsmSecurityParameters{
-				UserName:                 s.v3authuser,
-				AuthenticationProtocol:   authpmap[s.v3authprot],
-				AuthenticationPassphrase: s.v3authpass,
-				PrivacyProtocol:          gosnmp.NoPriv,
-				PrivacyPassphrase:        "",
-			}
-		case s.v3seclevel == "AuthPriv":
-			//validate s.authpass s.authprot
-			//validate s.privpass s.privprot
-			UsmParams = &gosnmp.UsmSecurityParameters{
-				UserName:                 s.v3authuser,
-				AuthenticationProtocol:   authpmap[s.v3authprot],
-				AuthenticationPassphrase: s.v3authpass,
-				PrivacyProtocol:          privpmap[s.v3privprot],
-				PrivacyPassphrase:        s.v3privpass,
-			}
+		if len(s.V3AuthUser) < 1 {
+			log.Printf("Error username not found in snmpv3 %s in host %s", s.V3AuthUser, s.Host)
+			//			log.Printf("DEBUG SNMP: %+v", *s)
+			return nil, ers.New("Error on snmp v3 user")
 		}
 
+		switch s.V3SecLevel {
+
+		case "NoAuthNoPriv":
+			log.Println("Selected NO Auth - No Priv")
+			UsmParams = &gosnmp.UsmSecurityParameters{
+				UserName:               s.V3AuthUser,
+				AuthenticationProtocol: gosnmp.NoAuth,
+				//	AuthenticationPassphrase: "",
+				PrivacyProtocol: gosnmp.NoPriv,
+				//	PrivacyPassphrase:        "",
+			}
+		case "AuthNoPriv":
+			log.Println("Selected SI Auth - No Priv")
+			if len(s.V3AuthPass) < 1 {
+				log.Printf("Error password not found in snmpv3 %s in host %s", s.V3AuthUser, s.Host)
+				//			log.Printf("DEBUG SNMP: %+v", *s)
+				return nil, ers.New("Error on snmp v3 AuthPass")
+			}
+
+			//validate correct s.authuser
+
+			if val, ok := authpmap[s.V3AuthProt]; !ok {
+				log.Printf("Error in Auth Protocol %s | %s  in host %s", s.V3AuthProt, val, s.Host)
+				return nil, ers.New("Error on snmp v3 AuthProt")
+			}
+
+			//validate s.authpass s.authprot
+			UsmParams = &gosnmp.UsmSecurityParameters{
+				UserName:                 s.V3AuthUser,
+				AuthenticationProtocol:   authpmap[s.V3AuthProt],
+				AuthenticationPassphrase: s.V3AuthPass,
+				PrivacyProtocol:          gosnmp.NoPriv,
+				//	PrivacyPassphrase:        "",
+			}
+		case "AuthPriv":
+			log.Println("Selected SI Auth - No Priv")
+			//validate s.authpass s.authprot
+
+			if len(s.V3AuthPass) < 1 {
+				log.Printf("Error password not found in snmpv3 %s in host %s", s.V3AuthUser, s.Host)
+				//				log.Printf("DEBUG SNMP: %+v", *s)
+				return nil, ers.New("Error on snmp v3 AuthPass")
+			}
+
+			if val, ok := authpmap[s.V3AuthProt]; !ok {
+				log.Printf("Error in Auth Protocol %s | %s  in host %s", s.V3AuthProt, val, s.Host)
+				return nil, ers.New("Error on snmp v3 AuthProt")
+			}
+
+			//validate s.privpass s.privprot
+
+			if len(s.V3PrivPass) < 1 {
+				log.Printf("Error privPass not found in snmpv3 %s in host %s", s.V3AuthUser, s.Host)
+				//		log.Printf("DEBUG SNMP: %+v", *s)
+				return nil, ers.New("Error on snmp v3 PrivPAss")
+			}
+
+			if val, ok := privpmap[s.V3PrivProt]; !ok {
+				log.Printf("Error in Priv Protocol %s | %s  in host %s", s.V3PrivProt, val, s.Host)
+				return nil, ers.New("Error on snmp v3 AuthPass")
+			}
+
+			UsmParams = &gosnmp.UsmSecurityParameters{
+				UserName:                 s.V3AuthUser,
+				AuthenticationProtocol:   authpmap[s.V3AuthProt],
+				AuthenticationPassphrase: s.V3AuthPass,
+				PrivacyProtocol:          privpmap[s.V3PrivProt],
+				PrivacyPassphrase:        s.V3PrivPass,
+			}
+		}
+		//		fmt.Printf("DEBUG: USMPARAMS %+v\n", *UsmParams)
 		client = &gosnmp.GoSNMP{
-			Target:             s.Host,
+			Target:             hostIPs[0],
 			Port:               uint16(s.Port),
 			Version:            gosnmp.Version3,
 			Timeout:            time.Duration(s.Timeout) * time.Second,
@@ -248,8 +302,15 @@ func snmpClient(s *SnmpConfig) (*gosnmp.GoSNMP, error) {
 			MsgFlags:           gosnmp.AuthPriv,
 			SecurityParameters: UsmParams,
 		}
+		//		fmt.Printf("DEBUG: CLIENT %+v\n", *client)
+	default:
+		log.Printf("Error no snmpversion found %s in host %s", s.SnmpVersion, s.Host)
+		return nil, ers.New("Error on snmp Version")
 	}
-
+	if s.Debug {
+		//client.Logger = log.New(os.Stdout, "", 0)
+		client.Logger = s.DebugLog()
+	}
 	err := client.Connect()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

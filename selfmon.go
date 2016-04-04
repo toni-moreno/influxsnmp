@@ -47,10 +47,6 @@ func (sm *SelfMonConfig) Report(metric string, value float64, timestamp time.Tim
 	return nil
 }
 
-func (sm *SelfMonConfig) Aggregate(metric string, value float64) error {
-	return nil
-}
-
 func (sm *SelfMonConfig) ReportStats(wg *sync.WaitGroup) {
 	if sm.runtimeStatsRunning {
 		fmt.Fprintf(os.Stderr, "Runtime stats is already running\n")
