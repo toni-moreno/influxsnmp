@@ -256,7 +256,7 @@ func snmpClient(s *SnmpConfig) (*gosnmp.GoSNMP, error) {
 				//	PrivacyPassphrase:        "",
 			}
 		case "AuthPriv":
-			log.Println("Selected SI Auth - No Priv")
+			log.Println("Selected SI Auth - Priv")
 			//validate s.authpass s.authprot
 
 			if len(s.V3AuthPass) < 1 {
