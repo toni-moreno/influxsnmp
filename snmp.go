@@ -202,7 +202,11 @@ func snmpClient(s *SnmpConfig) (*gosnmp.GoSNMP, error) {
 			Retries:   s.Retries,
 		}
 	case "3":
-
+		seclpmap := map[string]gosnmp.SnmpV3MsgFlags{
+			"NoAuthNoPriv": gosnmp.NoAuthNoPriv,
+			"AuthNoPriv":   gosnmp.AuthNoPriv,
+			"AuthPriv":     gosnmp.AuthPriv,
+		}
 		authpmap := map[string]gosnmp.SnmpV3AuthProtocol{
 			"NoAuth": gosnmp.NoAuth,
 			"MD5":    gosnmp.MD5,
@@ -217,26 +221,20 @@ func snmpClient(s *SnmpConfig) (*gosnmp.GoSNMP, error) {
 
 		if len(s.V3AuthUser) < 1 {
 			log.Printf("Error username not found in snmpv3 %s in host %s", s.V3AuthUser, s.Host)
-			//			log.Printf("DEBUG SNMP: %+v", *s)
 			return nil, ers.New("Error on snmp v3 user")
 		}
 
 		switch s.V3SecLevel {
 
 		case "NoAuthNoPriv":
-			log.Println("Selected NO Auth - No Priv")
 			UsmParams = &gosnmp.UsmSecurityParameters{
 				UserName:               s.V3AuthUser,
 				AuthenticationProtocol: gosnmp.NoAuth,
-				//	AuthenticationPassphrase: "",
-				PrivacyProtocol: gosnmp.NoPriv,
-				//	PrivacyPassphrase:        "",
+				PrivacyProtocol:        gosnmp.NoPriv,
 			}
 		case "AuthNoPriv":
-			log.Println("Selected SI Auth - No Priv")
 			if len(s.V3AuthPass) < 1 {
 				log.Printf("Error password not found in snmpv3 %s in host %s", s.V3AuthUser, s.Host)
-				//			log.Printf("DEBUG SNMP: %+v", *s)
 				return nil, ers.New("Error on snmp v3 AuthPass")
 			}
 
@@ -253,15 +251,12 @@ func snmpClient(s *SnmpConfig) (*gosnmp.GoSNMP, error) {
 				AuthenticationProtocol:   authpmap[s.V3AuthProt],
 				AuthenticationPassphrase: s.V3AuthPass,
 				PrivacyProtocol:          gosnmp.NoPriv,
-				//	PrivacyPassphrase:        "",
 			}
 		case "AuthPriv":
-			log.Println("Selected SI Auth - Priv")
 			//validate s.authpass s.authprot
 
 			if len(s.V3AuthPass) < 1 {
 				log.Printf("Error password not found in snmpv3 %s in host %s", s.V3AuthUser, s.Host)
-				//				log.Printf("DEBUG SNMP: %+v", *s)
 				return nil, ers.New("Error on snmp v3 AuthPass")
 			}
 
@@ -290,8 +285,11 @@ func snmpClient(s *SnmpConfig) (*gosnmp.GoSNMP, error) {
 				PrivacyProtocol:          privpmap[s.V3PrivProt],
 				PrivacyPassphrase:        s.V3PrivPass,
 			}
+		default:
+			log.Printf("Error no Security Level found %s in host %s", s.V3SecLevel, s.Host)
+			return nil, ers.New("Error on snmp Security Level")
+
 		}
-		//		fmt.Printf("DEBUG: USMPARAMS %+v\n", *UsmParams)
 		client = &gosnmp.GoSNMP{
 			Target:             hostIPs[0],
 			Port:               uint16(s.Port),
@@ -299,16 +297,14 @@ func snmpClient(s *SnmpConfig) (*gosnmp.GoSNMP, error) {
 			Timeout:            time.Duration(s.Timeout) * time.Second,
 			Retries:            s.Retries,
 			SecurityModel:      gosnmp.UserSecurityModel,
-			MsgFlags:           gosnmp.AuthPriv,
+			MsgFlags:           seclpmap[s.V3SecLevel],
 			SecurityParameters: UsmParams,
 		}
-		//		fmt.Printf("DEBUG: CLIENT %+v\n", *client)
 	default:
 		log.Printf("Error no snmpversion found %s in host %s", s.SnmpVersion, s.Host)
 		return nil, ers.New("Error on snmp Version")
 	}
 	if s.Debug {
-		//client.Logger = log.New(os.Stdout, "", 0)
 		client.Logger = s.DebugLog()
 	}
 	err := client.Connect()

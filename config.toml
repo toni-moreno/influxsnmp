@@ -58,7 +58,7 @@ community = "public"
 # runtime parameters
 freq = 30
 extratags = [ "tagA=1","tagB=2" , "tagC=3" ]
-debug = true
+#debug = true
 # if port file is ommited than all columns will be retrieved
 #portfile =  sample_ports.txt
 
@@ -75,51 +75,51 @@ community = "public"
 # runtime parameters
 freq = 30
 extratags = [ "tagA=1","tagB=2" , "tagC=3" ]
-debug = true
+#debug = true
 # if port file is ommited than all columns will be retrieved
 #portfile =  sample_ports.txt
 
 
 
-#[snmp.hostsnmpv3a]
-##conection parameters
-#host = "hostsnmpv3a"
-#port = 161
-#timeout = 20
-#retries = 5
-#repeat = 0
-##snmp version /auth params
-#snmpversion = "3"
-#3seclevel = "NoAuthNoPriv"
-##only needed if Auth v3 enabled
-#v3authuser = "v3usernoauth"
-## runtime parameters
-#freq = 30
-#extratags = [ "tagA=4","tagB=5" ,"tagC=6" ]
-#debug  = true
-## if port file is ommited than all columns will be retrieved
-##portfile =  sample_ports.txt
+[snmp.hostsnmpv3a]
+#conection parameters
+host = "hostsnmpv3a"
+port = 161
+timeout = 20
+retries = 5
+repeat = 0
+#snmp version /auth params
+snmpversion = "3"
+v3seclevel = "NoAuthNoPriv"
+#only needed if Auth v3 enabled
+v3authuser = "v3usernoauth"
+# runtime parameters
+freq = 30
+extratags = [ "tagA=4","tagB=5" ,"tagC=6" ]
+debug  = true
+# if port file is ommited than all columns will be retrieved
+#portfile =  sample_ports.txt
 
-#[snmp.hostsnmpv3b]
-##conection parameters
-#host = "hostsnmpv3b"
-#port = 161
-#timeout = 20
-#retries = 5
-#repeat = 0
-##snmp version /auth params
-#snmpversion = "3"
-#v3seclevel = "AuthNoPriv"
-##only needed if Auth v3 enabled
-#v3authuser = "v3userauth"
-#v3authpass = "v3passauth"
-#v3authprot = "MD5"
-## runtime parameters
-#freq = 30
+[snmp.hostsnmpv3b]
+#conection parameters
+host = "hostsnmpv3b"
+port = 161
+timeout = 20
+retries = 5
+repeat = 0
+#snmp version /auth params
+snmpversion = "3"
+v3seclevel = "AuthNoPriv"
+#only needed if Auth v3 enabled
+v3authuser = "v3userauth"
+v3authpass = "v3passauth"
+v3authprot = "MD5"
+# runtime parameters
+freq = 30
 #extratags = [ "tagA=4","tagB=5" ,"tagC=6" ]
 #debug  = true
-## if port file is ommited than all columns will be retrieved
-##portfile =  sample_ports.txt
+# if port file is ommited than all columns will be retrieved
+#portfile =  sample_ports.txt
 
 [snmp.hostsnmpv3c]
 #conection parameters
@@ -141,7 +141,7 @@ v3privprot = "DES"
 # runtime parameters
 freq = 30
 extratags = [ "tagA=4","tagB=5" ,"tagC=6" ]
-debug  = true
+#debug  = true
 # if port file is ommited than all columns will be retrieved
 #portfile =  sample_ports.txt
 

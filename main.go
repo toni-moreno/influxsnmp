@@ -7,13 +7,11 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	//	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	//"github.com/go-errors/errors"
 	"github.com/influxdata/influxdb/client/v2"
 	"github.com/kardianos/osext"
 	"github.com/soniah/gosnmp"
