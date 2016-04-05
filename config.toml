@@ -96,7 +96,7 @@ v3authuser = "v3usernoauth"
 # runtime parameters
 freq = 30
 extratags = [ "tagA=4","tagB=5" ,"tagC=6" ]
-debug  = true
+#debug  = true
 # if port file is ommited than all columns will be retrieved
 #portfile =  sample_ports.txt
 
