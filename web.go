@@ -15,6 +15,11 @@ import (
 	"time"
 )
 
+type HTTPConfig struct {
+	Port int `toml:"port"`
+}
+
+
 type HFunc struct {
 	Path string
 	Func http.HandlerFunc
@@ -139,14 +144,14 @@ func HomePage(w http.ResponseWriter, r *http.Request) {
 		Uptime          string
 		DB, LogFile     string
 		DebugAction     string
-		SNMP            map[string]*SnmpConfig
+		SNMP            map[string]*SnmpDeviceCfg
 		Influx          map[string]*InfluxConfig
 	}{
 		LogFile: errorName,
 		Started: startTime.Format(layout),
 		Uptime:  time.Now().Sub(startTime).String(),
 		Period:  errorPeriod,
-		SNMP:    cfg.Snmp,
+		SNMP:    cfg.SnmpDevice,
 		Influx:  cfg.Influx,
 	}
 
@@ -185,7 +190,7 @@ func DebugPage(w http.ResponseWriter, r *http.Request) {
 		action := r.Form.Get("action")
 		host := r.Form.Get("host")
 		fmt.Println("debug action:", action, "host:", host, "debug", (action == "enable"))
-		for _, c := range cfg.Snmp {
+		for _, c := range cfg.SnmpDevice {
 			if host == c.Host {
 				c.debugging <- (action == "enable")
 				break

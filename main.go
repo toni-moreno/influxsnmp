@@ -3,89 +3,22 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
+	//"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
-	"github.com/influxdata/influxdb/client/v2"
 	"github.com/kardianos/osext"
-	"github.com/soniah/gosnmp"
 	"github.com/spf13/viper"
 )
 
 const layout = "2006-01-02 15:04:05"
 
-type SnmpConfig struct {
-	//snmp connection config
-	Host    string `toml:"host"`
-	Port    int    `toml:"port"`
-	Retries int    `toml:"retries"`
-	Timeout int    `toml:"timeout"`
-	Repeat  int    `toml:"repeat"`
-	//snmp auth  config
-	SnmpVersion string `toml:"snmpversion"`
-	Community   string `toml:"community"`
-	V3SecLevel  string `toml:"v3seclevel"`
-	V3AuthUser  string `toml:"v3authuser"`
-	V3AuthPass  string `toml:"v3authpass"`
-	V3AuthProt  string `toml:"v3authprot"`
-	V3PrivPass  string `toml:"v3privpass"`
-	V3PrivProt  string `toml:"v3privprot"`
-	//snmp runtime config
-	Freq     int    `toml:"freq"`
-	PortFile string `toml:"portfile"`
-	Config   string `toml:"config"`
-	Debug    bool   `toml:"debug"`
-	//influx tags
-	ExtraTags []string `toml:"extra-tags"`
-	TagMap    map[string]string
-	//label translate
-	labels map[string]string
-	asName map[string]string
-	asOID  map[string]string
-	oids   []string
-	//pointe to objects
-	mib       *MibConfig
-	Influx    *InfluxConfig
-	LastError time.Time
-	Requests  int64
-	Gets      int64
-	Errors    int64
-	debugging chan bool
-	enabled   chan chan bool
-}
-
-type InfluxConfig struct {
-	Host      string `toml:"host"`
-	Port      int    `toml:"port"`
-	DB        string `toml:"db"`
-	User      string `toml:"user"`
-	Password  string `toml:"password"`
-	Retention string `toml:"retention"`
-	iChan     chan *client.BatchPoints
-	client    client.Client
-	Sent      int64
-	Errors    int64
-}
-
-type HTTPConfig struct {
-	Port int `toml:"port"`
-}
-
 type GeneralConfig struct {
-	LogDir  string `toml:"logdir"`
-	OidFile string `toml:"oidfile"`
-}
-
-type MibConfig struct {
-	Scalers bool     `toml:"scalers"`
-	Name    string   `toml:"name"`
-	Columns []string `toml:"column"`
+	LogDir string `toml:"logdir"`
 }
 
 var (
@@ -93,7 +26,7 @@ var (
 	verbose       bool
 	startTime     = time.Now()
 	testing       bool
-	snmpNames     bool
+	showConfig    bool
 	repeat        = 0
 	freq          = 30
 	httpPort      = 8080
@@ -101,7 +34,6 @@ var (
 	nameToOid     = make(map[string]string)
 	appdir, _     = osext.ExecutableFolder()
 	logDir        = filepath.Join(appdir, "log")
-	oidFile       = filepath.Join(appdir, "oids.txt")
 	configFile    = filepath.Join(appdir, "config.toml")
 	errorLog      *os.File
 	errorDuration = time.Duration(10 * time.Minute)
@@ -110,12 +42,14 @@ var (
 	errorName     string
 
 	cfg = struct {
-		Selfmon SelfMonConfig
-		Snmp    map[string]*SnmpConfig
-		Mibs    map[string]*MibConfig
-		Influx  map[string]*InfluxConfig
-		HTTP    HTTPConfig
-		General GeneralConfig
+		Selfmon      SelfMonConfig
+		Metrics      map[string]*SnmpMetricCfg
+		Measurements map[string]*InfluxMeasurementCfg
+		GetGroups    map[string]*MGroupsCfg
+		SnmpDevice   map[string]*SnmpDeviceCfg
+		Influx       map[string]*InfluxConfig
+		HTTP         HTTPConfig
+		General      GeneralConfig
 	}{}
 )
 
@@ -124,143 +58,22 @@ func fatal(v ...interface{}) {
 	log.Fatalln(v...)
 }
 
-func (c *SnmpConfig) DebugAction() string {
-	debug := make(chan bool)
-	c.enabled <- debug
-	if <-debug {
-		return "disable"
-	}
-	return "enable"
-}
-
-func (c *SnmpConfig) LoadPorts() {
-	c.labels = make(map[string]string)
-	if len(c.PortFile) == 0 {
-		return
-	}
-	data, err := ioutil.ReadFile(filepath.Join(appdir, c.PortFile))
-	if err != nil {
-		log.Fatal(err)
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		// strip comments
-		comment := strings.Index(line, "#")
-		if comment >= 0 {
-			line = line[:comment]
-		}
-		f := strings.Fields(line)
-		if len(f) < 2 {
-			continue
-		}
-		c.labels[f[0]] = f[1]
-	}
-}
-
-func (c *SnmpConfig) incRequests() {
-	atomic.AddInt64(&c.Requests, 1)
-}
-
-func (c *SnmpConfig) incGets() {
-	atomic.AddInt64(&c.Gets, 1)
-}
-
-func (c *SnmpConfig) incErrors() {
-	atomic.AddInt64(&c.Errors, 1)
-}
-
-func (c *InfluxConfig) incErrors() {
-	atomic.AddInt64(&c.Errors, 1)
-}
-
-func (c *InfluxConfig) incSent() {
-	atomic.AddInt64(&c.Sent, 1)
-}
-
-// loads [last_octet]name for device
-func (c *SnmpConfig) Translate() {
-	client, err := snmpClient(c)
-	if err != nil {
-		fatal("Client connect error:", err)
-	}
-	defer func() {
-		client.Conn.Close()
-	}()
-	spew("Looking up column names for:", c.Host, "NAMES", nameOid)
-	pdus, err := client.BulkWalkAll(nameOid)
-	if err != nil {
-		fatal("SNMP bulkwalk error", err)
-	}
-	c.asName = make(map[string]string)
-	c.asOID = make(map[string]string)
-	for _, pdu := range pdus {
-		switch pdu.Type {
-		case gosnmp.OctetString:
-			i := strings.LastIndex(pdu.Name, ".")
-			suffix := pdu.Name[i+1:]
-			name := string(pdu.Value.([]byte))
-			_, ok := c.labels[name]
-			if len(c.PortFile) == 0 || ok {
-				c.asName[name] = suffix
-				c.asOID[suffix] = name
-			}
-		}
-	}
-	// make sure we got everything
-	for k := range c.labels {
-		if _, ok := c.asName[k]; !ok {
-			fatal("No OID found for:", k)
-		}
-	}
-
-}
-
 func spew(x ...interface{}) {
 	if verbose {
 		fmt.Println(x...)
 	}
 }
 
-func (c *SnmpConfig) OIDs() {
-	if c.mib == nil {
-		fatal("NO MIB!")
-	}
-	c.oids = []string{}
-	//Debug fmt.Printf("%+v\n", c.mib)
-	for _, col := range c.mib.Columns {
-		//Debug fmt.Printf("%+v\n", col)
-		base, ok := nameToOid[col]
-		if !ok {
-			fatal("no oid for col:", col)
-		}
-		// just named columns
-		if len(c.PortFile) > 0 {
-			for k := range c.asOID {
-				c.oids = append(c.oids, base+"."+k)
-			}
-		} else if c.mib.Scalers {
-			// or plain old scaler instances
-			c.oids = append(c.oids, base+".0")
-		} else {
-			c.oids = append(c.oids, base)
-		}
-	}
-	if len(c.mib.Columns) > 0 {
-		spew("COLUMNS", c.mib.Columns)
-		spew(c.oids)
-	}
-}
-
 func flags() *flag.FlagSet {
 	var f flag.FlagSet
 	f.BoolVar(&testing, "testing", testing, "print data w/o saving")
-	f.BoolVar(&snmpNames, "names", snmpNames, "print column names and exit")
+	f.BoolVar(&showConfig, "showconf", showConfig, "show all devices config and exit")
 	f.StringVar(&configFile, "config", configFile, "config file")
 	f.BoolVar(&verbose, "verbose", verbose, "verbose mode")
 	f.IntVar(&repeat, "repeat", repeat, "number of times to repeat")
 	f.IntVar(&freq, "freq", freq, "delay (in seconds)")
 	f.IntVar(&httpPort, "http", httpPort, "http port")
 	f.StringVar(&logDir, "logs", logDir, "log directory")
-	f.StringVar(&oidFile, "oids", oidFile, "OIDs file")
 	f.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
 		f.VisitAll(func(flag *flag.Flag) {
@@ -272,6 +85,40 @@ func flags() *flag.FlagSet {
 
 	}
 	return &f
+}
+
+/*
+init_metrics_cfg this function does 2 things
+1.- Initialice id from key of maps for all SnmpMetricCfg and InfluxMeasurementCfg objects
+2.- Initialice references between InfluxMeasurementCfg and SnmpMetricGfg objects
+
+*/
+
+func init_metrics_cfg() error {
+	//Initialize references to SnmpMetricGfg into InfluxMeasurementCfg
+	log.Println("--------------------Initializing Config metrics-------------------")
+	log.Println("Initializing SNMPMetricconfig...")
+	for m_key, m_val := range cfg.Metrics {
+		err := m_val.Init(m_key)
+		if err != nil {
+			log.Println("Error in Metric config:", err)
+			//if some error int the format the metric is deleted from the config
+			delete(cfg.Metrics, m_key)
+		}
+	}
+	log.Println("Initializing MEASSUREMENTSconfig...")
+	for m_key, m_val := range cfg.Measurements {
+		err := m_val.Init(m_key, &cfg.Metrics)
+		if err != nil {
+			log.Println("Error in Metric config:", err)
+			//if some error int the format the metric is deleted from the config
+			delete(cfg.Metrics, m_key)
+		}
+
+		log.Printf("FIELDMETRICS: %+v", m_val.fieldMetric)
+	}
+	log.Println("-----------------------END Config metrics----------------------")
+	return nil
 }
 
 func init() {
@@ -298,50 +145,28 @@ func init() {
 	if len(cfg.General.LogDir) > 0 {
 		logDir = cfg.General.LogDir
 	}
-	if len(cfg.General.OidFile) > 0 {
-		oidFile = cfg.General.OidFile
-	}
-	// load oid lookup data
-	data, err := ioutil.ReadFile(oidFile)
-	if err != nil {
-		log.Fatal(err)
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		f := strings.Fields(line)
-		if len(f) < 2 {
-			continue
-		}
-		nameToOid[f[0]] = f[1]
-		oidToName[f[1]] = f[0]
-	}
 
-	for _, s := range cfg.Snmp {
-		//Debug fmt.Printf("%+v\n", s)
-		s.LoadPorts()
+	init_metrics_cfg()
+
+	for _, s := range cfg.SnmpDevice {
 		s.debugging = make(chan bool)
 		s.enabled = make(chan chan bool)
 	}
 	var ok bool
-	for name, c := range cfg.Snmp {
-		if c.mib, ok = cfg.Mibs[name]; !ok {
-			if c.mib, ok = cfg.Mibs["*"]; !ok {
-				fatal("No mib data found for config:", name)
-			}
-		}
-		//Debug fmt.Printf("C.MIB: %+v\n", c.mib)
-		c.Translate()
-		c.OIDs()
+	for k, c := range cfg.SnmpDevice {
+		//Inticialize each SNMP device
+		c.Init(k)
 		if c.Freq == 0 {
 			c.Freq = freq
 		}
 	}
 
 	// only run when one needs to see the interface names of the device
-	if snmpNames {
-		for _, c := range cfg.Snmp {
-			fmt.Println("\nSNMP host:", c.Host)
+	if showConfig {
+		for _, c := range cfg.SnmpDevice {
+			fmt.Println("\nSNMP host:", c.id)
 			fmt.Println("=========================================")
-			printSnmpNames(c)
+			c.printConfig()
 		}
 		os.Exit(0)
 	}
@@ -351,8 +176,8 @@ func init() {
 	f.Parse(os.Args[1:])
 	os.Mkdir(logDir, 0755)
 
-	//construc Extra tag map
-	for name, c := range cfg.Snmp {
+	//construc Extra tag map => Traspasar a SnmpDeviceCfg.Init()
+	for name, c := range cfg.SnmpDevice {
 		if len(c.ExtraTags) > 0 {
 			c.TagMap = make(map[string]string)
 			for _, tag := range c.ExtraTags {
@@ -368,7 +193,7 @@ func init() {
 	}
 
 	// now make sure each snmp device has a db
-	for name, c := range cfg.Snmp {
+	for name, c := range cfg.SnmpDevice {
 		// default is to use name of snmp config, but it can be overridden
 		if len(c.Config) > 0 {
 			name = c.Config
@@ -418,7 +243,9 @@ func main() {
 		cfg.Selfmon.ReportStats(&wg)
 	}
 
-	for _, c := range cfg.Snmp {
+	for _, c := range cfg.SnmpDevice {
+		//wg.Add(1)
+		//go c.Gather(repeat, &wg)
 		wg.Add(1)
 		go c.Gather(repeat, &wg)
 	}

@@ -5,8 +5,40 @@ import (
 	"log"
 	"strings"
 	"time"
+	//"sync"
+	"sync/atomic"
+
 	"github.com/influxdata/influxdb/client/v2"
 )
+
+type InfluxConfig struct {
+	Host      string `toml:"host"`
+	Port      int    `toml:"port"`
+	DB        string `toml:"db"`
+	User      string `toml:"user"`
+	Password  string `toml:"password"`
+	Retention string `toml:"retention"`
+	iChan     chan *client.BatchPoints
+	client    client.Client
+	Sent      int64
+	Errors    int64
+}
+
+func (c *InfluxConfig) incSent() {
+	atomic.AddInt64(&c.Sent, 1)
+}
+
+func (c *InfluxConfig) addSent(n int64) {
+	atomic.AddInt64(&c.Sent, n)
+}
+
+func (c *InfluxConfig) incErrors() {
+	atomic.AddInt64(&c.Errors, 1)
+}
+
+func (c *InfluxConfig) addErrors(n int64) {
+	atomic.AddInt64(&c.Errors, n)
+}
 
 func (cfg *InfluxConfig) BP() *client.BatchPoints {
 	if len(cfg.Retention) == 0 {
@@ -20,25 +52,6 @@ func (cfg *InfluxConfig) BP() *client.BatchPoints {
 	return &bp
 }
 
-func makePoint(host string, TagMap map[string]string, val *pduValue, when time.Time) *client.Point {
-	FullTags := map[string]string{
-		"host": host,
-		"port": val.column,
-	}
-
-	for key, value := range TagMap {
-		FullTags[key] = value
-	}
-	pt, _ := client.NewPoint(
-		val.name,
-		FullTags,
-		map[string]interface{}{
-			"value": val.value,
-		},
-		when,
-	)
-	return pt
-}
 
 func (cfg *InfluxConfig) Connect() error {
 	/*u, err := url.Parse(fmt.Sprintf("http://%s:%d", cfg.Host, cfg.Port))
