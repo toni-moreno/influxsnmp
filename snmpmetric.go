@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"strconv"
+	//	"math/big"
 	"path/filepath"
 	"strings"
 	"time"
@@ -218,6 +220,15 @@ func (m *InfluxMeasurementCfg) Init(name string, MetricCfg *map[string]*SnmpMetr
 	return nil
 }
 
+type MeasFilterCfg struct {
+	fType       string //file/OidCondition
+	FileName    string
+	enableAlias bool
+	OIDCond     string
+	condType    string
+	condValue   string
+}
+
 type InfluxMeasurement struct {
 	cfg              *InfluxMeasurementCfg
 	values           map[string]map[string]*SnmpMetric //snmpMetric mapped with metric_names and Index
@@ -226,9 +237,23 @@ type InfluxMeasurement struct {
 	Filterlabels     map[string]string
 	AllIndexedLabels map[string]string //all available values on the remote device
 	CurIndexedLabels map[string]string
+	Filter           *MeasFilterCfg
 }
 
 func (m *InfluxMeasurement) printConfig() {
+	if m.Filter != nil {
+		switch m.Filter.fType {
+		case "file":
+			fmt.Printf(" ----------------------------------------------------------\n")
+			fmt.Printf(" File Filter: %s ( EnableAlias: %b)\n", m.Filter.FileName, m.Filter.enableAlias)
+			fmt.Printf(" ----------------------------------------------------------\n")
+		case "OIDCondition":
+			fmt.Printf(" ----------------------------------------------------------\n")
+			fmt.Printf(" OID Condition Filter: %s ( [%s] %s)\n", m.Filter.OIDCond, m.Filter.condType, m.Filter.condValue)
+			fmt.Printf(" ----------------------------------------------------------\n")
+		}
+
+	}
 	for _, v := range m.cfg.fieldMetric {
 		fmt.Printf("\t*Metric[%s]\tName[%s]\tOID:%s\t(%s) \n", v.id, v.FieldName, v.BaseOID, v.DataSrcType)
 	}
@@ -319,16 +344,80 @@ func (m *InfluxMeasurement) GetInfluxPoint(host string, hostTags map[string]stri
 
 }
 
+func pduVal2Int64(pdu gosnmp.SnmpPDU) int64 {
+	val := pdu.Value
+	switch pdu.Type {
+	case gosnmp.Counter32:
+		return int64(val.(int32))
+	case gosnmp.Integer:
+		return int64(val.(int))
+	case gosnmp.Gauge32:
+		return int64(val.(uint))
+	case gosnmp.Counter64:
+		return val.(int64)
+	case gosnmp.Uinteger32:
+		return int64(val.(uint32))
+	}
+	return 0
+}
+
+/*
+SnmpBulkData GetSNMP Data
+*/
+
+func (m *InfluxMeasurement) SnmpBulkData(snmp *gosnmp.GoSNMP) (int64, int64, error) {
+
+	now := time.Now()
+	var sent int64 = 0
+	var errs int64 = 0
+
+	setRawData := func(pdu gosnmp.SnmpPDU) error {
+		log.Printf("DEBUG pdu:%+v", pdu)
+		if pdu.Value == nil {
+			log.Printf("WARNING : no value retured by pdu :%+v", pdu)
+		}
+		if metric, ok := m.oidSnmpMap[pdu.Name]; ok {
+			log.Println("OK measurement ", m.cfg.id, "SNMP RESULT OID", pdu.Name, "MetricFound", pdu.Value)
+			//val := pdu.Value
+			metric.setRawData(pduVal2Int64(pdu), now)
+			/*
+				switch pdu.Type {
+				case gosnmp.Counter32:
+					metric.setRawData(int64(val.(int32)), now)
+				case gosnmp.Integer:
+					metric.setRawData(int64(val.(int)), now)
+				case gosnmp.Gauge32:
+					metric.setRawData(int64(val.(uint)), now)
+				case gosnmp.Counter64:
+					metric.setRawData(val.(int64), now)
+				case gosnmp.Uinteger32:
+					metric.setRawData(int64(val.(uint32)), now)
+				}*/
+
+		} else {
+			log.Println("ERROR OID", pdu.Name, "Not Found in measurement", m.cfg.id)
+		}
+		return nil
+	}
+	for _, v := range m.cfg.fieldMetric {
+		if err := snmp.BulkWalk(v.BaseOID, setRawData); err != nil {
+			log.Printf("selected OID %s", v.BaseOID)
+			errLog("SNMP (%s) get error: %s\n", snmp.Target, err)
+			errs++
+		}
+		sent++
+	}
+
+	return sent, errs, nil
+}
+
 /*
 GetSnmpData GetSNMP Data
 */
 
-func (m *InfluxMeasurement) GetSnmpData(snmp *gosnmp.GoSNMP) (int64, int64, error) {
+func (m *InfluxMeasurement) SnmpGetData(snmp *gosnmp.GoSNMP) (int64, int64, error) {
 
 	now := time.Now()
-	/*	addPacket := func(pdu gosnmp.SnmpPDU) error {
-		return nil
-	}*/
 	var sent int64 = 0
 	var errs int64 = 0
 	l := len(m.snmpOids)
@@ -337,10 +426,12 @@ func (m *InfluxMeasurement) GetSnmpData(snmp *gosnmp.GoSNMP) (int64, int64, erro
 		if end > l {
 			end = len(m.snmpOids)
 		}
-		log.Printf("DEBUG oids:%+v", m.snmpOids)
-		log.Printf("DEBUG oidmap:%+v", m.oidSnmpMap)
+		log.Printf("DEBUG GET SNMP DATA FROM %d to %d", i, end)
+		//	log.Printf("DEBUG oids:%+v", m.snmpOids)
+		//	log.Printf("DEBUG oidmap:%+v", m.oidSnmpMap)
 		pkt, err := snmp.Get(m.snmpOids[i:end])
 		if err != nil {
+			log.Printf("selected OIDS %+v", m.snmpOids[i:end])
 			errLog("SNMP (%s) get error: %s\n", snmp.Target, err)
 			errs++
 		}
@@ -354,19 +445,20 @@ func (m *InfluxMeasurement) GetSnmpData(snmp *gosnmp.GoSNMP) (int64, int64, erro
 			val := pdu.Value
 			if metric, ok := m.oidSnmpMap[oid]; ok {
 				log.Println("OK measurement ", m.cfg.id, "SNMP RESULT OID", oid, "MetricFound", val)
-				log.Printf("Rawdata: +%v", metric.setRawData)
-				switch pdu.Type {
-				case gosnmp.Counter32:
-					metric.setRawData(int64(val.(int32)), now)
-				case gosnmp.Integer:
-					metric.setRawData(int64(val.(int)), now)
-				case gosnmp.Gauge32:
-					metric.setRawData(int64(val.(int32)), now)
-				case gosnmp.Counter64:
-					metric.setRawData(val.(int64), now)
-				case gosnmp.Uinteger32:
-					metric.setRawData(int64(val.(uint32)), now)
-				}
+				metric.setRawData(pduVal2Int64(pdu), now)
+				/*
+					switch pdu.Type {
+					case gosnmp.Counter32:
+						metric.setRawData(int64(val.(int32)), now)
+					case gosnmp.Integer:
+						metric.setRawData(int64(val.(int)), now)
+					case gosnmp.Gauge32:
+						metric.setRawData(int64(val.(uint)), now)
+					case gosnmp.Counter64:
+						metric.setRawData(val.(int64), now)
+					case gosnmp.Uinteger32:
+						metric.setRawData(int64(val.(uint32)), now)
+					}*/
 
 			} else {
 				log.Println("ERROR OID", oid, "Not Found in measurement", m.cfg.id)
@@ -422,30 +514,87 @@ func (m *InfluxMeasurement) loadIndexedLabels(c *SnmpDeviceCfg) error {
 /*
  filterIndexedLabels construct the final index array from all index and filters
 */
-func (m *InfluxMeasurement) filterIndexedLabels() error {
+func (m *InfluxMeasurement) filterIndexedLabels(f_mode string) error {
 	m.CurIndexedLabels = make(map[string]string, len(m.Filterlabels))
-	//
-	for k_f, v_f := range m.Filterlabels {
-		for k_l, v_l := range m.AllIndexedLabels {
-			//log.Println("K_F", k_f, "V_F", v_f, "K_L", k_l, "V_L", v_l)
-			if k_f == v_l {
-				if len(v_f) > 0 {
-					// map[k_l]v_f (alias to key of the label
-					m.CurIndexedLabels[k_l] = v_f
-				} else {
-					//map[k_l]v_l (original name)
-					m.CurIndexedLabels[k_l] = v_l
-				}
 
+	switch f_mode {
+	case "file":
+		//file filter should compare with all indexed labels with the value (name)
+		for k_f, v_f := range m.Filterlabels {
+			for k_l, v_l := range m.AllIndexedLabels {
+				if k_f == v_l {
+					if len(v_f) > 0 {
+						// map[k_l]v_f (alias to key of the label
+						m.CurIndexedLabels[k_l] = v_f
+					} else {
+						//map[k_l]v_l (original name)
+						m.CurIndexedLabels[k_l] = v_l
+					}
+
+				}
 			}
 		}
+
+	case "OIDCondition":
+		for k_f, _ := range m.Filterlabels {
+			for k_l, v_l := range m.AllIndexedLabels {
+				if k_f == k_l {
+					m.CurIndexedLabels[k_l] = v_l
+				}
+			}
+		}
+
+		//confition filter should comapre with all indexed label with the key (number)
 	}
+
 	//could be posible to a delete of the non needed arrays  m.AllIndexedLabels //m.Filterlabels
 	return nil
-
 }
 
-func (m *InfluxMeasurement) applyOIDCondFilter(oidCond string, typeCond string, valueCond string) error {
+func (m *InfluxMeasurement) IndexedLabels() error {
+	m.CurIndexedLabels = m.AllIndexedLabels
+	return nil
+}
+
+func (m *InfluxMeasurement) applyOIDCondFilter(c *SnmpDeviceCfg, oidCond string, typeCond string, valueCond string) error {
+	client := c.snmpClient
+	log.Println("Looking up column names for Condition in:", c.Host, "NAMES", oidCond)
+	pdus, err := client.BulkWalkAll(oidCond)
+	if err != nil {
+		fatal("SNMP bulkwalk error", err)
+	}
+	m.Filterlabels = make(map[string]string)
+	vc, err := strconv.Atoi(valueCond)
+	if err != nil {
+		return errors.New("only accepted numeric value as value condition current :" + valueCond)
+	}
+	var vci int64 = int64(vc)
+	for _, pdu := range pdus {
+		value := pduVal2Int64(pdu)
+		var cond bool
+		switch typeCond {
+		case "eq":
+			cond = (value == vci)
+		case "lt":
+			cond = (value < vci)
+		case "gt":
+			cond = (value > vci)
+		case "ge":
+			cond = (value >= vci)
+		case "le":
+			cond = (value <= vci)
+		default:
+			log.Println("Error in Condition filter for host:", c.Host, "OidCondition:", oidCond, "Type", typeCond, "value cond:", valueCond)
+		}
+		if cond == true {
+			i := strings.LastIndex(pdu.Name, ".")
+			suffix := pdu.Name[i+1:]
+			m.Filterlabels[suffix] = ""
+		}
+
+	}
+	return nil
+
 	log.Println("OID Condition filters not available yet")
 	return nil
 }

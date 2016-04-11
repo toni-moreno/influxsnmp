@@ -157,19 +157,36 @@ func (c *SnmpDeviceCfg) Init(name string) {
 		}
 		//loading filters
 		log.Println("Buscando filtro para  ", m.cfg.id)
+		var flt string
 		for _, f := range c.MeasFilters {
 			if f[0] == m.cfg.id {
 				log.Println("Se ha entontrado filtro ", m.cfg.id, "tipo", f[1])
 				if m.cfg.GetMode == "indexed" {
+					flt = f[1]
 					//OK we can apply filters
 					switch {
-					case f[1] == "file":
+					case flt == "file":
 						enable := f[3] == "EnableAlias"
-						m.applyFileFilter(f[2], enable)
-					case f[1] == "OIDCondition":
-						m.applyOIDCondFilter(f[2], f[3], f[4])
+						m.Filter = &MeasFilterCfg{
+							fType:       flt,
+							FileName:    f[2],
+							enableAlias: enable,
+						}
+						m.applyFileFilter(m.Filter.FileName, enable)
+					case flt == "OIDCondition":
+						m.Filter = &MeasFilterCfg{
+							fType:     flt,
+							OIDCond:   f[2],
+							condType:  f[3],
+							condValue: f[4],
+						}
+
+						m.applyOIDCondFilter(c,
+							m.Filter.OIDCond,
+							m.Filter.condType,
+							m.Filter.condValue)
 					default:
-						log.Println("ERROR: Invalid GetMode Type:", f[1])
+						log.Println("ERROR: Invalid GetMode Type:", flt)
 					}
 
 				} else {
@@ -182,7 +199,11 @@ func (c *SnmpDeviceCfg) Init(name string) {
 			}
 		}
 		//Loading final Values to query with snmp
-		m.filterIndexedLabels()
+		if len(c.MeasFilters) > 0 {
+			m.filterIndexedLabels(flt)
+		} else {
+			m.IndexedLabels()
+		}
 		log.Printf("MEASUREMENT HOST:%s | %s | %+v\n", c.Host, m.cfg.id, m)
 	}
 	//Initialize all snmpMetrics  objects and OID array
@@ -233,16 +254,25 @@ func (c *SnmpDeviceCfg) Init(name string) {
 
 			}
 		}
-		log.Printf("DEBUG oid map %+v", m.oidSnmpMap)
+		//		log.Printf("DEBUG oid map %+v", m.oidSnmpMap)
 
 	}
 	//get data first time
 	// useful to inicialize counter all value and test device snmp availability
 	for _, m := range c.InfmeasArray {
-		_, _, err := m.GetSnmpData(c.snmpClient)
-		if err != nil {
-			fatal("SNMP First Get Data error for host", c.Host)
+		if m.cfg.GetMode == "value" {
+			_, _, err := m.SnmpGetData(c.snmpClient)
+			if err != nil {
+				fatal("SNMP First Get Data error for host", c.Host)
+			}
+		} else {
+			_, _, err := m.SnmpBulkData(c.snmpClient)
+			if err != nil {
+				fatal("SNMP First Get Data error for host", c.Host)
+			}
+
 		}
+
 	}
 
 }
@@ -252,8 +282,8 @@ func (c *SnmpDeviceCfg) printConfig() {
 	fmt.Printf("Host: %s Port: %d Version: %s\n", c.Host, c.Port, c.SnmpVersion)
 	fmt.Printf("----------------------------------------------\n")
 	for _, v_m := range c.InfmeasArray {
-		fmt.Printf(" Measuremet : %s\n", v_m.cfg.id)
-		fmt.Printf(" ----------------------------------------------\n")
+		fmt.Printf(" Measurement : %s\n", v_m.cfg.id)
+		fmt.Printf(" ----------------------------------------------------------\n")
 		v_m.printConfig()
 	}
 }
@@ -311,12 +341,23 @@ func (s *SnmpDeviceCfg) Gather(count int, wg *sync.WaitGroup) {
 
 		for _, m := range s.InfmeasArray {
 			log.Println("----------------Processing measurement :", m.cfg.id)
-			n_gets, n_errors, _ := m.GetSnmpData(client)
-			if n_gets > 0 {
-				s.addGets(n_gets)
-			}
-			if n_errors > 0 {
-				s.addErrors(n_errors)
+			if m.cfg.GetMode == "value" {
+				n_gets, n_errors, _ := m.SnmpGetData(client)
+				if n_gets > 0 {
+					s.addGets(n_gets)
+				}
+				if n_errors > 0 {
+					s.addErrors(n_errors)
+				}
+			} else {
+				n_gets, n_errors, _ := m.SnmpBulkData(client)
+				if n_gets > 0 {
+					s.addGets(n_gets)
+				}
+				if n_errors > 0 {
+					s.addErrors(n_errors)
+				}
+
 			}
 			//prepare batchpoint and
 			points := m.GetInfluxPoint(s.Host, s.TagMap)

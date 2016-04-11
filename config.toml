@@ -1,11 +1,113 @@
 [selfmon]
+ enabled = true #true with ""
+ freq = 30
+ prefix = "gvm"
+ extratags = [ "instance=lan" ]
 
-enabled = true #true with ""
-freq = 30
-prefix = "gvm"
-extratags = [ "instance=lan" ]
+#--------------------------
+#  METRIC PARAMETERS
+#--------------------------
+# [metrics."id"] => id for other structs
+# name : name  measurement 
+# Description : litle desciption for user easy understand
+# BaseOID
 
-[snmp]
+# https://collectd.org/documentation/manpages/collectd-snmp.5.shtml
+#http://www.debianadmin.com/linux-snmp-oids-for-cpumemory-and-disk-statistics.html
+#http://publib.boulder.ibm.com/tividd/td/ITMFNP/SC31-6364-00/en_US/HTML/MNPADMST84.htm
+
+
+
+[metrics]
+[metrics."Linux_user_CPU_percent"]
+  fieldname = "user"
+  description = "percentage of user CPU time"
+  baseOID = ".1.3.6.1.4.1.2021.11.9.0"
+  Datasrctype = "INTEGER"
+
+[metrics."Linux_system_CPU_percent"]
+  fieldname = "system"
+  description = "percentage of System CPU time"
+  baseOID = ".1.3.6.1.4.1.2021.11.10.0"
+  Datasrctype = "INTEGER"
+
+[metrics."Linux_idle_CPU_percent"]
+  fieldname = "idle"
+  description = "percentage of System CPU time"
+  baseOID = ".1.3.6.1.4.1.2021.11.11.0"
+  Datasrctype = "INTEGER"
+
+[metrics."ifHCInOctets"]
+  fieldname = "In.bytes"
+  description = "Bytes In - 64-bit Counters"
+  baseOID = ".1.3.6.1.2.1.31.1.1.1.6"
+  DatasrcType = "COUNTER64"
+  getrate = false
+
+[metrics."ifHCOutOctets"]
+  fieldname = "Out.bytes"
+  description = "Bytes In - 64-bit Counters"
+  baseOID = ".1.3.6.1.2.1.31.1.1.1.10" 
+  DatasrcType = "COUNTER64"
+  getRate = false
+
+[metrics."ifHCInUcastPkts"]
+  fieldname = "In.packets"
+  description = "Bytes In - 64-bit Counters"
+  baseOID = ".1.3.6.1.2.1.31.1.1.1.7"
+  DatasrcType = "COUNTER64"
+  getRate = false
+
+[metrics."ifHCOutUcastPkts"]
+  fieldname = "Out.packets"
+  description = "Packets - 64-bit Counters"
+  baseOID = ".1.3.6.1.2.1.31.1.1.1.7"
+  DatasrcType = "COUNTER64"
+  getRate = false
+
+#--------------------------
+#  MEASUREMENTS
+#--------------------------
+
+
+
+[measurements]
+
+[measurements."linux_cpu"]
+ name = "linux.cpu"
+ fields = [ 	"Linux_user_CPU_percent",
+		"Linux_system_CPU_percent",
+		"Linux_idle_CPU_percent",
+	]
+ getmode = "value"
+
+[measurements."linux_ports"]
+ name = "linux.ports"
+ fields = [ 	"ifHCInOctets",
+		"ifHCOutOctets",
+		"ifHCInUcastPkts",
+		"ifHCOutUcastPkts"
+ ]
+ getmode = "indexed"
+ indexOID = ".1.3.6.1.2.1.31.1.1.1.1" # ifName => needed to be "STRING"
+ IndexTAG = "portName"
+ 
+#--------------------------
+#  GetGroups
+#--------------------------
+# list of measurements for standarized devices
+
+
+[getgroups]
+
+[getgroups."Linux"]
+
+measurements = 	[ 
+		"linux_cpu", 
+		"linux_ports",
+		]
+
+
 #--------------------------
 #  CONETION PARAMETERS
 #--------------------------
@@ -43,134 +145,150 @@ extratags = [ "instance=lan" ]
 # extratags 	: Array with extratags in format key = value will be sent to the influxdb database 
 # portfile 	: file with port filter
 # debug		:
+# filters 	: Array containing filter file per measurement.
 
 
-[snmp.hostsnmpv2_1]
-#conection parameters
-host = "127.0.0.1"
-port = 161
-timeout = 20
-retries = 5
-#repeat = 0
-#snmp version /auth params
-snmpversion = "2c"  
-community = "public"
-# runtime parameters
-freq = 30
-extratags = [ "tagA=1","tagB=2" , "tagC=3" ]
-#debug = true
-# if port file is ommited than all columns will be retrieved
-#portfile =  sample_ports.txt
+	
 
-[snmp.hostsnmpv2_2]
-#conection parameters
-host = "hostsnmpv2_2"
-port = 161
-timeout = 20
-retries = 5
-#repeat = 0
-#snmp version /auth params
-snmpversion = "2c"  
-community = "public"
-# runtime parameters
-freq = 30
-extratags = [ "tagA=1","tagB=2" , "tagC=3" ]
-#debug = true
-# if port file is ommited than all columns will be retrieved
-#portfile =  sample_ports.txt
+[snmpdevice]
+
+#[snmpdevice.hostsnmpv2_1]
+# #conection parameters
+# host = "127.0.0.1"
+# port = 161
+# timeout = 20
+# retries = 5
+# #repeat = 0
+# #snmp version /auth params
+# snmpversion = "2c"  
+# community = "public"
+# # runtime parameters
+# freq = 30
+# extratags = [ "tagA=1","tagB=2" , "tagC=3" ]
+# #debug = true
+# metricgroups = [ "Linux*" ]
+
+#[snmpdevice.hostsnmpv2_2]
+# #conection parameters
+# host = "hostsnmpv2_2"
+# port = 161
+# timeout = 20
+# retries = 5
+# #repeat = 0
+# #snmp version /auth params
+# snmpversion = "2c"  
+# community = "public"
+# # runtime parameters
+# freq = 30
+# extratags = [ "tagA=1","tagB=2" , "tagC=3" ]
+# #debug = true
+# metricgroups = [ "Linux*" ]
 
 
 
-[snmp.hostsnmpv3a]
-#conection parameters
-host = "hostsnmpv3a"
-port = 161
-timeout = 20
-retries = 5
-repeat = 0
-#snmp version /auth params
-snmpversion = "3"
-v3seclevel = "NoAuthNoPriv"
-#only needed if Auth v3 enabled
-v3authuser = "v3usernoauth"
-# runtime parameters
-freq = 30
-extratags = [ "tagA=4","tagB=5" ,"tagC=6" ]
-#debug  = true
-# if port file is ommited than all columns will be retrieved
-#portfile =  sample_ports.txt
+#[snmpdevice.hostsnmpv3a]
+# #conection parameters
+# host = "hostsnmpv3a"
+# port = 161
+# timeout = 20
+# retries = 5
+# repeat = 0
+# #snmp version /auth params
+# snmpversion = "3"
+# v3seclevel = "NoAuthNoPriv"
+# #only needed if Auth v3 enabled
+# v3authuser = "v3usernoauth"
+# # runtime parameters
+# freq = 30
+# extratags = [ "tagA=4","tagB=5" ,"tagC=6" ]
+# #debug  = true
+# metricgroups = [ "Linux.*" ]
+# measfilters = [ 
+#		[ "linux_ports" , "file" , "lp_file_filter_a.txt" ,"EnableAlias"],
+#	]
+#
+#[snmpdevice.hostsnmpv3b]
+# #conection parameters
+## host = "hostsnmpv3b"
+# port = 161
+# timeout = 20
+# retries = 5
+# repeat = 0
+# #snmp version /auth params
+# snmpversion = "3"
+# v3seclevel = "AuthNoPriv"
+# #only needed if Auth v3 enabled
+# v3authuser = "v3userauth"
+# v3authpass = "v3passauth"
+# v3authprot = "MD5"
+# # runtime parameters
+# freq = 30
+# #extratags = [ "tagA=4","tagB=5" ,"tagC=6" ]
+# #debug  = true
+# metricgroups = [ ".*ux" ]
+# measfilters = [ 
+#		[ "linux_ports" , "OIDCondition", "ifOperStatus","eq","1" ],
+#	]
 
-[snmp.hostsnmpv3b]
-#conection parameters
-host = "hostsnmpv3b"
-port = 161
-timeout = 20
-retries = 5
-repeat = 0
-#snmp version /auth params
-snmpversion = "3"
-v3seclevel = "AuthNoPriv"
-#only needed if Auth v3 enabled
-v3authuser = "v3userauth"
-v3authpass = "v3passauth"
-v3authprot = "MD5"
-# runtime parameters
-freq = 30
-#extratags = [ "tagA=4","tagB=5" ,"tagC=6" ]
-#debug  = true
-# if port file is ommited than all columns will be retrieved
-#portfile =  sample_ports.txt
+ 
+[snmpdevice.hostsnmpv3c]
+ #conection parameters
+ host = "hostsnmpv3c"
+ port = 161
+ timeout = 20
+ retries = 5
+ repeat = 0
+ #snmp version /auth params
+ snmpversion = "3"
+ v3seclevel = "AuthPriv"
+ #only needed if Auth v3 enabled
+ v3authuser = "v3userpriv"
+ v3authpass = "v3passpriv"
+ v3authprot = "MD5"
+ #only needed if Privacy v3 enabled
+ v3privpass = "v3passenc"
+ v3privprot = "DES"
+ # runtime parameters
+ freq = 30
+ extratags = [ "tagA=4","tagB=5" ,"tagC=6" ]
+ #debug  = true
+ metricgroups = [ "Lin.*"]
+# measfilters = [ 
+#		[ "linux_ports" , "file" , "lp_file_filter_c.txt" ,"DisableAlias"],
+#	]
+ measfilters = [ 
+		[ "linux_ports" , "OIDCondition", ".1.3.6.1.2.1.2.2.1.8","eq","1" ], #IfOperStatus
+]
 
-[snmp.hostsnmpv3c]
-#conection parameters
-host = "hostsnmpv3c"
-port = 161
-timeout = 20
-retries = 5
-repeat = 0
-#snmp version /auth params
-snmpversion = "3"
-v3seclevel = "AuthPriv"
-#only needed if Auth v3 enabled
-v3authuser = "v3userpriv"
-v3authpass = "v3passpriv"
-v3authprot = "MD5"
-#only needed if Privacy v3 enabled
-v3privpass = "v3passenc"
-v3privprot = "DES"
-# runtime parameters
-freq = 30
-extratags = [ "tagA=4","tagB=5" ,"tagC=6" ]
-#debug  = true
-# if port file is ommited than all columns will be retrieved
-#portfile =  sample_ports.txt
 
+
+ 
 [mibs]
 [mibs."*"]
-name = "ifXEntry"
-scalers = false
-columns = [
-	"ifHCInOctets",
-	"ifHCInUcastPkts",
-	"ifHCOutOctets",
-	"ifHCOutUcastPkts"
+	name = "ifXEntry"
+	scalers = false
+	columns = [
+		"ifHCInOctets",
+		"ifHCInUcastPkts",
+		"ifHCOutOctets",
+		"ifHCOutUcastPkts"
 	]
 
 [mibs."switch"]
-name = "ifXEntry"
-columns = [
-	"ifHCInOctets",
-	"ifHCOutOctets"
-	]
+	name = "ifXEntry"
+	columns = [
+		"ifHCInOctets",
+		"ifHCOutOctets"
+		]
 
 [influx]
 
 [influx."*"]
-host = "192.168.1.103"
-port = 8086
-db = "snmp"
-user = "snmpuser"
-password = "snmppass"
+	host = "192.168.1.103"
+	port = 8086
+	db = "snmp"
+	user = "snmpuser"
+	password = "snmppass"
 
 [http]
-port   = 8090
+	port   = 8090
