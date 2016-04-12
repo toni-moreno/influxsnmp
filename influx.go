@@ -52,7 +52,6 @@ func (cfg *InfluxConfig) BP() *client.BatchPoints {
 	return &bp
 }
 
-
 func (cfg *InfluxConfig) Connect() error {
 	/*u, err := url.Parse(fmt.Sprintf("http://%s:%d", cfg.Host, cfg.Port))
 	if err != nil {
@@ -104,6 +103,7 @@ func (c *InfluxConfig) Hostname() string {
 // influxdb server don't drop collected data
 
 func influxEmitter(cfg *InfluxConfig) {
+	log.Println("beggining Influx Emmiter thread")
 	for {
 		select {
 		case data := <-cfg.iChan:

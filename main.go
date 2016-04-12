@@ -25,7 +25,6 @@ var (
 	quit          = make(chan struct{})
 	verbose       bool
 	startTime     = time.Now()
-	testing       bool
 	showConfig    bool
 	repeat        = 0
 	freq          = 30
@@ -66,11 +65,9 @@ func spew(x ...interface{}) {
 
 func flags() *flag.FlagSet {
 	var f flag.FlagSet
-	f.BoolVar(&testing, "testing", testing, "print data w/o saving")
 	f.BoolVar(&showConfig, "showconf", showConfig, "show all devices config and exit")
 	f.StringVar(&configFile, "config", configFile, "config file")
 	f.BoolVar(&verbose, "verbose", verbose, "verbose mode")
-	f.IntVar(&repeat, "repeat", repeat, "number of times to repeat")
 	f.IntVar(&freq, "freq", freq, "delay (in seconds)")
 	f.IntVar(&httpPort, "http", httpPort, "http port")
 	f.StringVar(&logDir, "logs", logDir, "log directory")
@@ -130,7 +127,8 @@ func init() {
 		viper.SetConfigFile(configFile)
 	} else {
 		viper.SetConfigName("config")
-		viper.AddConfigPath("/opt/influxsnmp/")
+		viper.AddConfigPath("/opt/influxsnmp/conf/")
+		viper.AddConfigPath("./conf/")
 		viper.AddConfigPath(".")
 	}
 	err := viper.ReadInConfig()
@@ -244,18 +242,20 @@ func main() {
 	}
 
 	for _, c := range cfg.SnmpDevice {
-		//wg.Add(1)
-		//go c.Gather(repeat, &wg)
 		wg.Add(1)
-		go c.Gather(repeat, &wg)
+		go c.Gather(&wg)
 	}
-	if repeat > 0 {
-		wg.Wait()
+
+	var port int
+	if cfg.HTTP.Port > 0 {
+		port = cfg.HTTP.Port
 	} else {
-		if httpPort > 0 {
-			webServer(httpPort)
-		} else {
-			<-quit
-		}
+		port = httpPort
+	}
+
+	if port > 0 {
+		webServer(port)
+	} else {
+		<-quit
 	}
 }

@@ -12,6 +12,25 @@ import (
 	"github.com/soniah/gosnmp"
 )
 
+
+func pduVal2Int64(pdu gosnmp.SnmpPDU) int64 {
+	val := pdu.Value
+	switch pdu.Type {
+	case gosnmp.Counter32:
+		return int64(val.(int32))
+	case gosnmp.Integer:
+		return int64(val.(int))
+	case gosnmp.Gauge32:
+		return int64(val.(uint))
+	case gosnmp.Counter64:
+		return val.(int64)
+	case gosnmp.Uinteger32:
+		return int64(val.(uint32))
+	}
+	return 0
+}
+
+
 const (
 	maxOids = 60 // const in gosnmp
 )
