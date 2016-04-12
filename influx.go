@@ -107,9 +107,9 @@ func influxEmitter(cfg *InfluxConfig) {
 	for {
 		select {
 		case data := <-cfg.iChan:
-			if testing {
+			/*if testing {
 				break
-			}
+			}*/
 			if data == nil {
 				log.Println("null influx input")
 				continue

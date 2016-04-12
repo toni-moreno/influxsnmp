@@ -260,7 +260,7 @@ func (c *SnmpDeviceCfg) Init(name string) {
 	//get data first time
 	// useful to inicialize counter all value and test device snmp availability
 	for _, m := range c.InfmeasArray {
-		if m.cfg.GetMode == "value" || s.SnmpVersion == "1" {
+		if m.cfg.GetMode == "value" || c.SnmpVersion == "1" {
 			_, _, err := m.SnmpGetData(c.snmpClient)
 			if err != nil {
 				fatal("SNMP First Get Data error for host", c.Host)
@@ -329,7 +329,7 @@ func (s *SnmpDeviceCfg) DebugLog() *log.Logger {
 	}
 }
 
-func (s *SnmpDeviceCfg) Gather( wg *sync.WaitGroup) {
+func (s *SnmpDeviceCfg) Gather(wg *sync.WaitGroup) {
 	client := s.snmpClient
 	debug := false
 
