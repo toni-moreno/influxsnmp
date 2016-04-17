@@ -42,8 +42,10 @@ type SnmpDeviceCfg struct {
 	log       *logrus.Logger
 	SnmpDebug bool `toml:"snmpdebug"`
 	//influx tags
-	ExtraTags []string `toml:"extra-tags"`
-	TagMap    map[string]string
+	DeviceTagName  string   `toml:devicetagname`
+	DeviceTagValue string   `toml:devicetagvalue`
+	ExtraTags      []string `toml:"extra-tags"`
+	TagMap         map[string]string
 	//Filters for measurements
 	MetricGroups []string   `toml:"metricgroups"`
 	MeasFilters  [][]string `toml:"measfilters"`
@@ -74,8 +76,10 @@ Init  does the following
 */
 
 func (c *SnmpDeviceCfg) Init(name string) {
+	log.Infof("Initializing device %s\n", name)
+	//Init id
 	c.id = name
-	//Logger
+	//Init Logger
 
 	if len(c.LogFile) == 0 {
 		c.LogFile = cfg.General.LogDir + "/" + name + ".log"
@@ -91,7 +95,40 @@ func (c *SnmpDeviceCfg) Init(name string) {
 	c.log.Out = f
 	l, _ := logrus.ParseLevel(c.LogLevel)
 	c.log.Level = l
+
+	//Init Device Tags
+
+	c.TagMap = make(map[string]string)
+	if len(c.DeviceTagName) == 0 {
+		c.DeviceTagName = "device"
+	}
+
+	var val string
+
+	switch c.DeviceTagValue {
+	case "id":
+		val = c.id
+	case "host":
+		val = c.Host
+	default:
+		val = c.id
+		c.log.Warnf("Unkwnown DeviceTagValue %s set ID (%s) as value", c.DeviceTagValue, val)
+	}
+
+	c.TagMap[c.DeviceTagName] = val
+
+	if len(c.ExtraTags) > 0 {
+		for _, tag := range c.ExtraTags {
+			s := strings.Split(tag, "=")
+			key, value := s[0], s[1]
+			c.TagMap[key] = value
+		}
+	} else {
+		c.log.Warnf("No map detected in device %s\n", name)
+	}
+
 	//Init SNMP client device
+
 	client, err := snmpClient(c)
 	if err != nil {
 		fatal("Client connect error:", err)
@@ -378,7 +415,7 @@ func (c *SnmpDeviceCfg) Gather(wg *sync.WaitGroup) {
 
 			}
 			//prepare batchpoint and
-			points := m.GetInfluxPoint(c.Host, c.TagMap)
+			points := m.GetInfluxPoint( /*c.Host,*/ c.TagMap)
 			(*bpts).AddPoints(points)
 
 		}

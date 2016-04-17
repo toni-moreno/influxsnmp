@@ -3,10 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
-	//	"log"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -56,18 +54,9 @@ var (
 )
 
 func fatal(v ...interface{}) {
-	//log.SetOutput(os.Stderr)
 	log.Fatalln(v...)
 }
 
-/*
-
-func spew(x ...interface{}) {
-	if verbose {
-		fmt.Println(x...)
-	}
-}
-*/
 func flags() *flag.FlagSet {
 	var f flag.FlagSet
 	f.BoolVar(&showConfig, "showconf", showConfig, "show all devices config and exit")
@@ -93,7 +82,6 @@ func flags() *flag.FlagSet {
 init_metrics_cfg this function does 2 things
 1.- Initialice id from key of maps for all SnmpMetricCfg and InfluxMeasurementCfg objects
 2.- Initialice references between InfluxMeasurementCfg and SnmpMetricGfg objects
-
 */
 
 func init_metrics_cfg() error {
@@ -186,23 +174,8 @@ func init() {
 	f.Parse(os.Args[1:])
 	os.Mkdir(logDir, 0755)
 
-	//construc Extra tag map => Traspasar a SnmpDeviceCfg.Init()
-	for name, c := range cfg.SnmpDevice {
-		if len(c.ExtraTags) > 0 {
-			c.TagMap = make(map[string]string)
-			for _, tag := range c.ExtraTags {
-				s := strings.Split(tag, "=")
-				key, value := s[0], s[1]
-				c.TagMap[key] = value
-			}
-		} else {
-			log.Errorf("No map detected in device %s\n", name)
-		}
-		//Debug fmt.Printf("TAG ARRAY[ %s ]: %+v\n", name, c.ExtraTags)
-		//Debug fmt.Printf("EXTRA TAGS MAP[ %s ]: %+v\n", name, c.TagMap)
-	}
-
 	// now make sure each snmp device has a db
+
 	for name, c := range cfg.SnmpDevice {
 		// default is to use name of snmp config, but it can be overridden
 		if len(c.Config) > 0 {
@@ -215,7 +188,9 @@ func init() {
 		}
 		c.Influx.Init()
 	}
+
 	//make sure the selfmon has a deb
+
 	if cfg.Selfmon.Enabled {
 		cfg.Selfmon.Init()
 		cfg.Selfmon.Influx, ok = cfg.Influx["*"]
@@ -234,17 +209,6 @@ func init() {
 	}
 }
 
-/*
-func errLog(msg string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, msg, args...)
-	fmt.Fprintf(errorLog, msg, args...)
-}
-
-func errMsg(msg string, err error) {
-	now := time.Now()
-	errLog("%s\t%s: %s\n", now.Format(layout), msg, err)
-}
-*/
 func main() {
 	var wg sync.WaitGroup
 	defer func() {

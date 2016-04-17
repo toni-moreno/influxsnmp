@@ -61,7 +61,7 @@
 [metrics."ifHCOutUcastPkts"]
   fieldname = "Out.packets"
   description = "Packets - 64-bit Counters"
-  baseOID = ".1.3.6.1.2.1.31.1.1.1.7"
+  baseOID = ".1.3.6.1.2.1.31.1.1.1.11"
   DatasrcType = "COUNTER64"
   getRate = false
 
@@ -112,11 +112,14 @@ measurements = 	[
 #  CONETION PARAMETERS
 #--------------------------
 
+
 # host : hostname or IP (no default)
 # port : conection port (no default)
 # timeout : Timeout is the timeout for the SNMP Query in seconds
 # retries : Set the number of retries to attempt within timeout.
 # repeat : (Not used yet)
+
+# NOTE any device has an  any unique indentificator "ID" string in the [snmpdevice."id"] field
 
 #--------------------------------
 #   SNMP VERSION/AUTH PARAMETERS
@@ -146,8 +149,6 @@ measurements = 	[
 # portfile 	: file with port filter
 # debug		:
 # filters 	: Array containing filter file per measurement.
-
-
 	
 
 [snmpdevice]
@@ -164,6 +165,8 @@ measurements = 	[
  community = "public"
  # runtime parameters
  freq = 30
+ devicetagname = "switch"
+ devicetagvalue = "id"
  extratags = [ "tagA=1","tagB=2" , "tagC=3" ]
  #debug = true
  metricgroups = [ "Linux*" ]
@@ -180,10 +183,11 @@ measurements = 	[
  community = "public"
  # runtime parameters
  freq = 30
+ devicetagname = "switch"
+ devicetagvalue = "id"
  extratags = [ "tagA=1","tagB=2" , "tagC=3" ]
  #debug = true
  metricgroups = [ "Linux*" ]
-
 
 
 [snmpdevice.hostsnmpv3a]
@@ -199,7 +203,9 @@ measurements = 	[
  #only needed if Auth v3 enabled
  v3authuser = "v3usernoauth"
  # runtime parameters
- freq = 30
+ freq = 60
+ devicetagname = "router"
+ devicetagvalue = "id"
  extratags = [ "tagA=4","tagB=5" ,"tagC=6" ]
  #debug  = true
  metricgroups = [ "Linux.*" ]

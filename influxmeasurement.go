@@ -122,15 +122,16 @@ func (m *InfluxMeasurement) printConfig() {
 	}
 }
 
-func (m *InfluxMeasurement) GetInfluxPoint(host string, hostTags map[string]string) []*client.Point {
+func (m *InfluxMeasurement) GetInfluxPoint( /*host string,*/ hostTags map[string]string) []*client.Point {
 	var ptarray []*client.Point
-	FullTags := map[string]string{
-		"host": host,
-	}
-	//adding host specific tabs
-	for key, value := range hostTags {
-		FullTags[key] = value
-	}
+	/*
+		FullTags := map[string]string{
+			"host": host,
+		}
+		//adding host specific tabs
+		for key, value := range hostTags {
+			FullTags[key] = value
+		}*/
 
 	switch m.cfg.GetMode {
 	case "value":
@@ -144,11 +145,12 @@ func (m *InfluxMeasurement) GetInfluxPoint(host string, hostTags map[string]stri
 			t = v_mtr.curTime
 		}
 		m.log.Debug("FIELDS:%+v", Fields)
-		m.log.Debug("TAGS:%+v", FullTags)
+		//	m.log.Debug("TAGS:%+v", FullTags)
 
 		pt, err := client.NewPoint(
 			m.cfg.Name,
-			FullTags,
+			//FullTags,
+			hostTags,
 			Fields,
 			t,
 		)
@@ -165,7 +167,8 @@ func (m *InfluxMeasurement) GetInfluxPoint(host string, hostTags map[string]stri
 			m.log.Debugf("generating influx point for indexed %s", k_idx)
 			//copy tags and add index tag
 			Tags := make(map[string]string)
-			for k_t, v_t := range FullTags {
+			//for k_t, v_t := range FullTags {
+			for k_t, v_t := range hostTags {
 				Tags[k_t] = v_t
 			}
 			Tags[m.cfg.IndexTag] = k_idx
