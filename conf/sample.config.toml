@@ -1,5 +1,9 @@
+[general]
+ logdir = "./log"
+ logLevel = "debug"
+
 [selfmon]
- enabled = true #true with ""
+ enabled = true 
  freq = 30
  prefix = "gvm"
  extratags = [ "instance=snmp1" ]
@@ -8,11 +12,15 @@
 #  METRIC PARAMETERS
 #--------------------------
 # [metrics."id"] => id for other structs
-# name : name  measurement 
+# fielname : name  measurement 
 # Description : litle desciption for user easy understand
-# BaseOID
+# BaseOID : the real OID we need to query
+# Datasrctype : any of GAUGE,INTEGER,COUNTER32,COUNTER64
+# - GAUGE:  with this type of data this tool will send  direct value( float )
+# - INTEGUER:  with this type of data this tool will send  direct value( int)
+# - COUNTER32:  with this , this tool will compute the diference ( it takes care of  posible counter overflow)
+# - COUNTER64:  with this , this tool will compute the diference ( it takes care of  posible counter overflow)
 
-# https://collectd.org/documentation/manpages/collectd-snmp.5.shtml
 #http://www.debianadmin.com/linux-snmp-oids-for-cpumemory-and-disk-statistics.html
 #http://publib.boulder.ibm.com/tividd/td/ITMFNP/SC31-6364-00/en_US/HTML/MNPADMST84.htm
 
@@ -68,7 +76,17 @@
 #--------------------------
 #  MEASUREMENTS
 #--------------------------
+# [measurements."id"] => id unique for this measurement.
+# name 		: name  for the measurement 
+# fields 	: array of metric id's to join as fields in the measurement
+# getMode 	:  posible values [ "value", "indexed" ] 
+# 	* value: will send direct the value from these metrics.
+#	* indexed: will send points for each found indexed values ( like intefaces ) => needs indexOID/indexTag parameters
+# indexOID: the OID from we will get all real OID's to query data.
+# indexTAG: the tag name that will be sent after data gathered.
 
+#http://www.debianadmin.com/linux-snmp-oids-for-cpumemory-and-disk-statistics.html
+#http://publib.boulder.ibm.com/tividd/td/ITMFNP/SC31-6364-00/en_US/HTML/MNPADMST84.htm
 
 
 [measurements]
@@ -207,7 +225,8 @@ measurements = 	[
  devicetagname = "router"
  devicetagvalue = "id"
  extratags = [ "tagA=4","tagB=5" ,"tagC=6" ]
- #debug  = true
+ #loglevel = "info"
+ #snmpdebug  = true
  metricgroups = [ "Linux.*" ]
  measfilters = [ 
 		[ "linux_ports" , "file" , "lp_file_filter_a.txt" ,"EnableAlias"],
@@ -230,7 +249,8 @@ measurements = 	[
  # runtime parameters
  freq = 30
  #extratags = [ "tagA=4","tagB=5" ,"tagC=6" ]
- #debug  = true
+ loglevel = "info"
+ snmpdebug  = false 
  metricgroups = [ ".*ux" ]
  measfilters = [ 
 		[ "linux_ports" , "file", "lp_file_filter_b.txt","EnableAlia" ],
@@ -257,7 +277,8 @@ measurements = 	[
  # runtime parameters
  freq = 30
  extratags = [ "tagA=4","tagB=5" ,"tagC=6" ]
- #debug  = true
+ loglevel = "debug"
+ snmpdebug  = true
  metricgroups = [ "Lin.*"]
  measfilters = [ 
 		[ "linux_ports" , "OIDCondition", ".1.3.6.1.2.1.2.2.1.8","eq","1" ], #IfOperStatus
