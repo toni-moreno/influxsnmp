@@ -162,11 +162,13 @@ measurements = 	[
 # RUNTIME OPTIONS
 # --------------------------
 #
-# freq 		: Frequency of polling in seconds ( default none)
-# extratags 	: Array with extratags in format key = value will be sent to the influxdb database 
-# portfile 	: file with port filter
-# debug		:
-# filters 	: Array containing filter file per measurement.
+# freq          : Frequency of polling in seconds ( default none)
+# devicetagname : The tag name that will identify the device (default : "device")
+# devicetagvalue: the tag valude that will identify the device ( default : "id" ) [ posible values "id" --hostsnmpv2_1--  or "host" --127.0.0.1-- ]
+# extratags     : Array with extratags in format key = value will be sent to the influxdb database
+# snmpdebug     :
+# filters       : Array containing filter file per measurement.
+
 	
 
 [snmpdevice]
