@@ -3,14 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
-	//"io/ioutil"
-	"log"
+	//	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/kardianos/osext"
 	"github.com/spf13/viper"
 )
@@ -18,10 +18,12 @@ import (
 const layout = "2006-01-02 15:04:05"
 
 type GeneralConfig struct {
-	LogDir string `toml:"logdir"`
+	LogDir   string `toml:"logdir"`
+	LogLevel string `toml:"loglevel"`
 }
 
 var (
+	log           = logrus.New()
 	quit          = make(chan struct{})
 	verbose       bool
 	startTime     = time.Now()
@@ -33,7 +35,8 @@ var (
 	nameToOid     = make(map[string]string)
 	appdir, _     = osext.ExecutableFolder()
 	logDir        = filepath.Join(appdir, "log")
-	configFile    = filepath.Join(appdir, "config.toml")
+	confDir       = filepath.Join(appdir, "conf")
+	configFile    = filepath.Join(confDir, "config.toml")
 	errorLog      *os.File
 	errorDuration = time.Duration(10 * time.Minute)
 	errorPeriod   = errorDuration.String()
@@ -53,16 +56,18 @@ var (
 )
 
 func fatal(v ...interface{}) {
-	log.SetOutput(os.Stderr)
+	//log.SetOutput(os.Stderr)
 	log.Fatalln(v...)
 }
+
+/*
 
 func spew(x ...interface{}) {
 	if verbose {
 		fmt.Println(x...)
 	}
 }
-
+*/
 func flags() *flag.FlagSet {
 	var f flag.FlagSet
 	f.BoolVar(&showConfig, "showconf", showConfig, "show all devices config and exit")
@@ -92,29 +97,31 @@ init_metrics_cfg this function does 2 things
 */
 
 func init_metrics_cfg() error {
+	//TODO:
+	// - check duplicates OID's => warning messages
 	//Initialize references to SnmpMetricGfg into InfluxMeasurementCfg
-	log.Println("--------------------Initializing Config metrics-------------------")
-	log.Println("Initializing SNMPMetricconfig...")
+	log.Debug("--------------------Initializing Config metrics-------------------")
+	log.Debug("Initializing SNMPMetricconfig...")
 	for m_key, m_val := range cfg.Metrics {
 		err := m_val.Init(m_key)
 		if err != nil {
-			log.Println("Error in Metric config:", err)
+			log.Warnln("Error in Metric config:", err)
 			//if some error int the format the metric is deleted from the config
 			delete(cfg.Metrics, m_key)
 		}
 	}
-	log.Println("Initializing MEASSUREMENTSconfig...")
+	log.Debug("Initializing MEASSUREMENTSconfig...")
 	for m_key, m_val := range cfg.Measurements {
 		err := m_val.Init(m_key, &cfg.Metrics)
 		if err != nil {
-			log.Println("Error in Metric config:", err)
+			log.Warnln("Error in Metric config:", err)
 			//if some error int the format the metric is deleted from the config
 			delete(cfg.Metrics, m_key)
 		}
 
-		log.Printf("FIELDMETRICS: %+v", m_val.fieldMetric)
+		log.Debugf("FIELDMETRICS: %+v", m_val.fieldMetric)
 	}
-	log.Println("-----------------------END Config metrics----------------------")
+	log.Debug("-----------------------END Config metrics----------------------")
 	return nil
 }
 
@@ -142,6 +149,11 @@ func init() {
 	//Debug	fmt.Printf("%+v\n", cfg)
 	if len(cfg.General.LogDir) > 0 {
 		logDir = cfg.General.LogDir
+	}
+	if len(cfg.General.LogLevel) > 0 {
+		l, _ := logrus.ParseLevel(cfg.General.LogLevel)
+		log.Level = l
+
 	}
 
 	init_metrics_cfg()
@@ -184,7 +196,7 @@ func init() {
 				c.TagMap[key] = value
 			}
 		} else {
-			fmt.Printf("No map detected in %s\n", name)
+			log.Errorf("No map detected in device %s\n", name)
 		}
 		//Debug fmt.Printf("TAG ARRAY[ %s ]: %+v\n", name, c.ExtraTags)
 		//Debug fmt.Printf("EXTRA TAGS MAP[ %s ]: %+v\n", name, c.TagMap)
@@ -216,12 +228,13 @@ func init() {
 	var ferr error
 	errorName = fmt.Sprintf("error.%d.log", cfg.HTTP.Port)
 	errorPath := filepath.Join(logDir, errorName)
-	errorLog, ferr = os.OpenFile(errorPath, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0664)
+	errorLog, ferr = os.OpenFile(errorPath, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
 	if ferr != nil {
-		log.Fatal("Can't open error log:", ferr)
+		log.Fatalln("Can't open error log:", ferr)
 	}
 }
 
+/*
 func errLog(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, msg, args...)
 	fmt.Fprintf(errorLog, msg, args...)
@@ -231,7 +244,7 @@ func errMsg(msg string, err error) {
 	now := time.Now()
 	errLog("%s\t%s: %s\n", now.Format(layout), msg, err)
 }
-
+*/
 func main() {
 	var wg sync.WaitGroup
 	defer func() {

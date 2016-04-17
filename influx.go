@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	//"log"
 	"strings"
 	"time"
 	//"sync"
@@ -40,55 +40,50 @@ func (c *InfluxConfig) addErrors(n int64) {
 	atomic.AddInt64(&c.Errors, n)
 }
 
-func (cfg *InfluxConfig) BP() *client.BatchPoints {
-	if len(cfg.Retention) == 0 {
-		cfg.Retention = "default"
+func (c *InfluxConfig) BP() *client.BatchPoints {
+	if len(c.Retention) == 0 {
+		c.Retention = "default"
 	}
 	bp, _ := client.NewBatchPoints(client.BatchPointsConfig{
-		Database:        cfg.DB,
-		RetentionPolicy: cfg.Retention,
+		Database:        c.DB,
+		RetentionPolicy: c.Retention,
 		Precision:       "ns", //Default precision for Time lib
 	})
 	return &bp
 }
 
-func (cfg *InfluxConfig) Connect() error {
-	/*u, err := url.Parse(fmt.Sprintf("http://%s:%d", cfg.Host, cfg.Port))
-	if err != nil {
-		return err
-	}*/
-
+func (c *InfluxConfig) Connect() error {
 	conf := client.HTTPConfig{
-		Addr:     fmt.Sprintf("http://%s:%d", cfg.Host, cfg.Port),
-		Username: cfg.User,
-		Password: cfg.Password,
+		Addr:     fmt.Sprintf("http://%s:%d", c.Host, c.Port),
+		Username: c.User,
+		Password: c.Password,
 	}
 	cli, err := client.NewHTTPClient(conf)
-	cfg.client = cli
+	c.client = cli
 	if err != nil {
 		return err
 	}
 
-	_, _, err = cfg.client.Ping(time.Duration(5))
+	_, _, err = c.client.Ping(time.Duration(5))
 	return err
 }
 
-func (cfg *InfluxConfig) Init() {
+func (c *InfluxConfig) Init() {
 
 	if verbose {
-		log.Println("Connecting to:", cfg.Host)
+		log.Infoln("Connecting to: ", c.Host)
 	}
-	cfg.iChan = make(chan *client.BatchPoints, 65535)
-	if err := cfg.Connect(); err != nil {
-		log.Println("failed connecting to:", cfg.Host)
-		log.Println("error:", err)
+	c.iChan = make(chan *client.BatchPoints, 65535)
+	if err := c.Connect(); err != nil {
+		log.Errorln("failed connecting to: ", c.Host)
+		log.Errorln("error: ", err)
 		log.Fatal(err)
 	}
 	if verbose {
-		log.Println("Connected to:", cfg.Host)
+		log.Infoln("Connected to: ", c.Host)
 	}
 
-	go influxEmitter(cfg)
+	go influxEmitter(c)
 }
 
 func (c *InfluxConfig) Send(bps *client.BatchPoints) {
@@ -102,30 +97,31 @@ func (c *InfluxConfig) Hostname() string {
 // use chan as a queue so that interupted connections to
 // influxdb server don't drop collected data
 
-func influxEmitter(cfg *InfluxConfig) {
-	log.Println("beggining Influx Emmiter thread")
+func influxEmitter(c *InfluxConfig) {
+	log.Info("beggining Influx Emmiter thread")
 	for {
 		select {
-		case data := <-cfg.iChan:
+		case data := <-c.iChan:
 			/*if testing {
 				break
 			}*/
 			if data == nil {
-				log.Println("null influx input")
+				log.Warn("null influx input")
 				continue
 			}
 
 			// keep trying until we get it (don't drop the data)
 			for {
-				if err := cfg.client.Write(*data); err != nil {
-					cfg.incErrors()
-					log.Println("influxdb write error:", err)
+				if err := c.client.Write(*data); err != nil {
+					c.incErrors()
+					log.Errorln("influxdb write error: ", err)
 					// try again in a bit
 					// TODO: this could be better
+					// Todo add InfluxResend on error.
 					time.Sleep(30 * time.Second)
 					continue
 				} else {
-					cfg.incSent()
+					c.incSent()
 				}
 				break
 			}

@@ -4,13 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
-	"strconv"
-	//	"math/big"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/influxdata/influxdb/client/v2"
 	"github.com/soniah/gosnmp"
 )
@@ -25,52 +24,52 @@ type InfluxMeasurementCfg struct {
 	fieldMetric []*SnmpMetricCfg
 }
 
-func (m *InfluxMeasurementCfg) Init(name string, MetricCfg *map[string]*SnmpMetricCfg) error {
-	m.id = name
+func (mc *InfluxMeasurementCfg) Init(name string, MetricCfg *map[string]*SnmpMetricCfg) error {
+	mc.id = name
 	//validate config values
-	if len(m.Name) == 0 {
-		return errors.New("Name not set in measurement Config " + m.id)
+	if len(mc.Name) == 0 {
+		return errors.New("Name not set in measurement Config " + mc.id)
 	}
-	if len(m.Fields) == 0 {
-		return errors.New("No Fields added to measurement " + m.id)
+	if len(mc.Fields) == 0 {
+		return errors.New("No Fields added to measurement " + mc.id)
 	}
 
-	switch m.GetMode {
+	switch mc.GetMode {
 	case "indexed":
-		if len(m.IndexOID) == 0 {
-			return errors.New("Indexed measurement with no IndexOID in measurement Config " + m.id)
+		if len(mc.IndexOID) == 0 {
+			return errors.New("Indexed measurement with no IndexOID in measurement Config " + mc.id)
 		}
-		if len(m.IndexTag) == 0 {
-			return errors.New("Indexed measurement with no IndexTag configuredin measurement " + m.id)
+		if len(mc.IndexTag) == 0 {
+			return errors.New("Indexed measurement with no IndexTag configuredin measurement " + mc.id)
 		}
-		if !strings.HasPrefix(m.IndexOID, ".") {
-			return errors.New("Bad BaseOid format:" + m.IndexOID + " in metric Config " + m.id)
+		if !strings.HasPrefix(mc.IndexOID, ".") {
+			return errors.New("Bad BaseOid format:" + mc.IndexOID + " in metric Config " + mc.id)
 		}
 
 	case "value":
 	default:
-		return errors.New("Unknown GetMode" + m.GetMode + " in measurement Config " + m.id)
+		return errors.New("Unknown GetMode" + mc.GetMode + " in measurement Config " + mc.id)
 	}
 
-	log.Println("processing measurement key: ", name)
-	log.Printf("%+v", m)
-	for _, f_val := range m.Fields {
-		log.Println("looking for measure ", m.Name, " fields: ", f_val)
+	log.Info("processing measurement key: ", name)
+	log.Debug("%+v", mc)
+	for _, f_val := range mc.Fields {
+		log.Debug("looking for measure ", mc.Name, " fields: ", f_val)
 		if val, ok := (*MetricCfg)[f_val]; ok {
-			log.Println("Found ok!")
+			log.Debug("Found ok!")
 			//map is correct
-			m.fieldMetric = append(m.fieldMetric, val)
+			mc.fieldMetric = append(mc.fieldMetric, val)
 		} else {
-			log.Println("WARNING measurement field ", f_val, " NOT FOUND !")
+			log.Warn("measurement field ", f_val, " NOT FOUND in Metrics Database !")
 		}
 	}
 	//check if fieldMetric
-	if len(m.fieldMetric) == 0 {
+	if len(mc.fieldMetric) == 0 {
 		var s string
-		for _, v := range m.Fields {
+		for _, v := range mc.Fields {
 			s += v
 		}
-		return errors.New("No metrics found with names" + s + " in measurement Config " + m.id)
+		return errors.New("No metrics found with names" + s + " in measurement Config " + mc.id)
 	}
 	return nil
 }
@@ -93,6 +92,9 @@ type InfluxMeasurement struct {
 	AllIndexedLabels map[string]string //all available values on the remote device
 	CurIndexedLabels map[string]string
 	Filter           *MeasFilterCfg
+	log              *logrus.Logger
+	numValOrig       int //num of values in the full index
+	numValFlt        int //num of final indexed values after filter applyed
 }
 
 func (m *InfluxMeasurement) printConfig() {
@@ -100,11 +102,11 @@ func (m *InfluxMeasurement) printConfig() {
 		switch m.Filter.fType {
 		case "file":
 			fmt.Printf(" ----------------------------------------------------------\n")
-			fmt.Printf(" File Filter: %s ( EnableAlias: %b)\n", m.Filter.FileName, m.Filter.enableAlias)
+			fmt.Printf(" File Filter: %s ( EnableAlias: %b)\n [ TOTAL: %d| FILTERED: %d]", m.Filter.FileName, m.Filter.enableAlias, m.numValOrig, m.numValFlt)
 			fmt.Printf(" ----------------------------------------------------------\n")
 		case "OIDCondition":
 			fmt.Printf(" ----------------------------------------------------------\n")
-			fmt.Printf(" OID Condition Filter: %s ( [%s] %s)\n", m.Filter.OIDCond, m.Filter.condType, m.Filter.condValue)
+			fmt.Printf(" OID Condition Filter: %s ( [%s] %s) [ TOTAL: %d| FILTERED: %d] \n", m.Filter.OIDCond, m.Filter.condType, m.Filter.condValue, m.numValOrig, m.numValFlt)
 			fmt.Printf(" ----------------------------------------------------------\n")
 		}
 
@@ -136,13 +138,13 @@ func (m *InfluxMeasurement) GetInfluxPoint(host string, hostTags map[string]stri
 		var t time.Time
 		Fields := make(map[string]interface{})
 		for _, v_mtr := range k {
-			log.Println("generating field for ", v_mtr.cfg.FieldName, "value", v_mtr.cookedValue)
-			log.Printf("DEBUG METRIC %+v", v_mtr)
+			m.log.Debugf("generating field for %s value %s ", v_mtr.cfg.FieldName, v_mtr.cookedValue)
+			m.log.Debugf("DEBUG METRIC %+v", v_mtr)
 			Fields[v_mtr.cfg.FieldName] = v_mtr.cookedValue
 			t = v_mtr.curTime
 		}
-		log.Printf("FIELDS:%+v", Fields)
-		log.Printf("TAGS:%+v", FullTags)
+		m.log.Debug("FIELDS:%+v", Fields)
+		m.log.Debug("TAGS:%+v", FullTags)
 
 		pt, err := client.NewPoint(
 			m.cfg.Name,
@@ -151,33 +153,32 @@ func (m *InfluxMeasurement) GetInfluxPoint(host string, hostTags map[string]stri
 			t,
 		)
 		if err != nil {
-			log.Printf("WARNING  error in influx point building:%s", err)
+			m.log.Warnf("error in influx point building:%s", err)
 		} else {
-			log.Printf("DEBUG INFLUX POINT[%s] value: %+v", m.cfg.Name, pt)
+			m.log.Debugf("GENERATED INFLUX POINT[%s] value: %+v", m.cfg.Name, pt)
 			ptarray = append(ptarray, pt)
 		}
 
 	case "indexed":
 		var t time.Time
 		for k_idx, v_idx := range m.values {
-			log.Println("generating influx point for indexed", k_idx)
+			m.log.Debugf("generating influx point for indexed %s", k_idx)
 			//copy tags and add index tag
 			Tags := make(map[string]string)
 			for k_t, v_t := range FullTags {
 				Tags[k_t] = v_t
 			}
 			Tags[m.cfg.IndexTag] = k_idx
-			log.Printf("IDX :%+v", v_idx)
+			m.log.Debugf("IDX :%+v", v_idx)
 			Fields := make(map[string]interface{})
 			for _, v_mtr := range v_idx {
-				log.Printf("DEBUG METRIC %+v", v_mtr.cfg)
-				log.Println("generating field for Metric", v_mtr.cfg.FieldName)
+				m.log.Debugf("DEBUG METRIC %+v", v_mtr.cfg)
+				m.log.Debugf("generating field for Metric: %s", v_mtr.cfg.FieldName)
 				Fields[v_mtr.cfg.FieldName] = v_mtr.cookedValue
 				t = v_mtr.curTime
-
 			}
-			log.Printf("FIELDS:%+v", Fields)
-			log.Printf("TAGS:%+v", Tags)
+			m.log.Debugf("FIELDS:%+v", Fields)
+			m.log.Debugf("TAGS:%+v", Tags)
 			pt, err := client.NewPoint(
 				m.cfg.Name,
 				Tags,
@@ -185,10 +186,9 @@ func (m *InfluxMeasurement) GetInfluxPoint(host string, hostTags map[string]stri
 				t,
 			)
 			if err != nil {
-				log.Printf("WARNING  error in influx point building:%s", err)
+				m.log.Warnf("error in influx point creation :%s", err)
 			} else {
-
-				log.Printf("DEBUG INFLUX POINT[%s] index [%s]: %+v", m.cfg.Name, k_idx, pt)
+				m.log.Debugf("DEBUG INFLUX POINT[%s] index [%s]: %+v", m.cfg.Name, k_idx, pt)
 				ptarray = append(ptarray, pt)
 			}
 		}
@@ -210,24 +210,22 @@ func (m *InfluxMeasurement) SnmpBulkData(snmp *gosnmp.GoSNMP) (int64, int64, err
 	var errs int64 = 0
 
 	setRawData := func(pdu gosnmp.SnmpPDU) error {
-		log.Printf("DEBUG pdu:%+v", pdu)
+		m.log.Debugf("received SNMP  pdu:%+v", pdu)
 		if pdu.Value == nil {
-			log.Printf("WARNING : no value retured by pdu :%+v", pdu)
+			m.log.Warnf("no value retured by pdu :%+v", pdu)
+			return nil //if error return the bulk process will stop
 		}
 		if metric, ok := m.oidSnmpMap[pdu.Name]; ok {
-			log.Println("OK measurement ", m.cfg.id, "SNMP RESULT OID", pdu.Name, "MetricFound", pdu.Value)
-			//val := pdu.Value
+			m.log.Debugln("OK measurement ", m.cfg.id, "SNMP RESULT OID", pdu.Name, "MetricFound", pdu.Value)
 			metric.setRawData(pduVal2Int64(pdu), now)
-
 		} else {
-			log.Println("ERROR OID", pdu.Name, "Not Found in measurement", m.cfg.id)
+			m.log.Debugf("returned OID from device: %s  Not Found in measurement /metric list: %+v", pdu.Name, m.cfg.id)
 		}
 		return nil
 	}
 	for _, v := range m.cfg.fieldMetric {
 		if err := snmp.BulkWalk(v.BaseOID, setRawData); err != nil {
-			log.Printf("selected OID %s", v.BaseOID)
-			errLog("SNMP (%s) get error: %s\n", snmp.Target, err)
+			m.log.Errorf("SNMP (%s) for OID (%s) get error: %s\n", snmp.Target, v.BaseOID, err)
 			errs++
 		}
 		sent++
@@ -251,35 +249,35 @@ func (m *InfluxMeasurement) SnmpGetData(snmp *gosnmp.GoSNMP) (int64, int64, erro
 		if end > l {
 			end = len(m.snmpOids)
 		}
-		log.Printf("DEBUG GET SNMP DATA FROM %d to %d", i, end)
+		m.log.Debugf("Getting snmp data from %d to %d", i, end)
 		//	log.Printf("DEBUG oids:%+v", m.snmpOids)
 		//	log.Printf("DEBUG oidmap:%+v", m.oidSnmpMap)
 		pkt, err := snmp.Get(m.snmpOids[i:end])
 		if err != nil {
-			log.Printf("selected OIDS %+v", m.snmpOids[i:end])
-			errLog("SNMP (%s) get error: %s\n", snmp.Target, err)
+			m.log.Debugf("selected OIDS %+v", m.snmpOids[i:end])
+			m.log.Errorf("SNMP (%s) for OIDs (%d/%d) get error: %s\n", snmp.Target, i, end, err)
 			errs++
+
 		}
 		sent++
 		for _, pdu := range pkt.Variables {
-			log.Printf("DEBUG pdu:%+v", pdu)
+			m.log.Debugf("DEBUG pdu:%+v", pdu)
 			if pdu.Value == nil {
 				continue
 			}
 			oid := pdu.Name
 			val := pdu.Value
 			if metric, ok := m.oidSnmpMap[oid]; ok {
-				log.Println("OK measurement ", m.cfg.id, "SNMP RESULT OID", oid, "MetricFound", val)
+				m.log.Debugf("OK measurement %s SNMP result OID: %s MetricFound: %s ", m.cfg.id, oid, val)
 				metric.setRawData(pduVal2Int64(pdu), now)
 			} else {
-				log.Println("ERROR OID", oid, "Not Found in measurement", m.cfg.id)
+				m.log.Errorln("OID", oid, "Not Found in measurement", m.cfg.id)
 			}
 		}
 	}
 
 	return sent, errs, nil
 }
-
 
 func removeDuplicatesUnordered(elements []string) []string {
 	encountered := map[string]bool{}
@@ -299,12 +297,13 @@ func removeDuplicatesUnordered(elements []string) []string {
 
 func (m *InfluxMeasurement) loadIndexedLabels(c *SnmpDeviceCfg) error {
 	client := c.snmpClient
-	log.Println("Looking up column names for:", c.Host, "NAMES", m.cfg.IndexOID)
+	m.log.Debugf("Looking up column names for: %s  NAMES %s ", c.Host, m.cfg.IndexOID)
 	pdus, err := client.BulkWalkAll(m.cfg.IndexOID)
 	if err != nil {
-		fatal("SNMP bulkwalk error", err)
+		m.log.Fatalln("SNMP bulkwalk error", err)
 	}
 	m.AllIndexedLabels = make(map[string]string)
+	m.numValOrig = 0
 	for _, pdu := range pdus {
 		switch pdu.Type {
 		case gosnmp.OctetString:
@@ -312,8 +311,10 @@ func (m *InfluxMeasurement) loadIndexedLabels(c *SnmpDeviceCfg) error {
 			suffix := pdu.Name[i+1:]
 			name := string(pdu.Value.([]byte))
 			m.AllIndexedLabels[suffix] = name
+			m.numValOrig++
+			m.log.Debugf("Got the following index for %c :[%s/%s]", c.Host, suffix, name)
 		default:
-			log.Println("Error in IndexedLabel for host:", c.Host, "IndexLabel:", m.cfg.IndexOID, "ERR: Not String")
+			m.log.Errorf("Error in IndexedLabel for host: %s  IndexLabel %s ERR: Not String", c.Host, m.cfg.IndexOID)
 		}
 	}
 	return nil
@@ -366,16 +367,17 @@ func (m *InfluxMeasurement) IndexedLabels() error {
 
 func (m *InfluxMeasurement) applyOIDCondFilter(c *SnmpDeviceCfg, oidCond string, typeCond string, valueCond string) error {
 	client := c.snmpClient
-	log.Println("Looking up column names for Condition in:", c.Host, "NAMES", oidCond)
+	m.log.Infof("Apply Condition Filter: Looking up column names in: %s Condition %s", c.Host, oidCond)
 	pdus, err := client.BulkWalkAll(oidCond)
 	if err != nil {
-		fatal("SNMP bulkwalk error", err)
+		m.log.Fatalf("SNMP bulkwalk error : %s", err)
 	}
 	m.Filterlabels = make(map[string]string)
 	vc, err := strconv.Atoi(valueCond)
 	if err != nil {
 		return errors.New("only accepted numeric value as value condition current :" + valueCond)
 	}
+	m.numValFlt = 0
 	var vci int64 = int64(vc)
 	for _, pdu := range pdus {
 		value := pduVal2Int64(pdu)
@@ -392,29 +394,27 @@ func (m *InfluxMeasurement) applyOIDCondFilter(c *SnmpDeviceCfg, oidCond string,
 		case "le":
 			cond = (value <= vci)
 		default:
-			log.Println("Error in Condition filter for host:", c.Host, "OidCondition:", oidCond, "Type", typeCond, "value cond:", valueCond)
+			m.log.Errorf("Error in Condition filter for host: %s OidCondition: %s Type: %s ValCond: %s ", c.Host, oidCond, typeCond, valueCond)
 		}
 		if cond == true {
 			i := strings.LastIndex(pdu.Name, ".")
 			suffix := pdu.Name[i+1:]
 			m.Filterlabels[suffix] = ""
+			m.numValFlt++
 		}
 
 	}
 	return nil
-
-	log.Println("OID Condition filters not available yet")
-	return nil
 }
 
 func (m *InfluxMeasurement) applyFileFilter(file string, enableAlias bool) error {
-	log.Println("apply File filter :", file, "Enable Alias:", enableAlias)
+	m.log.Infof("apply File filter : %s Enable Alias: %s", file, enableAlias)
 	if len(file) == 0 {
 		return errors.New("File error ")
 	}
-	data, err := ioutil.ReadFile(filepath.Join(appdir, file))
+	data, err := ioutil.ReadFile(filepath.Join(confDir, file))
 	if err != nil {
-		log.Fatal(err)
+		m.log.Fatal(err)
 	}
 	m.Filterlabels = make(map[string]string)
 	for l_num, line := range strings.Split(string(data), "\n") {
@@ -440,7 +440,7 @@ func (m *InfluxMeasurement) applyFileFilter(file string, enableAlias bool) error
 			}
 
 		default:
-			log.Println("Error in numero de parametros de fichero: ", file, "Lnum: ", l_num, "num :", len(f), "line:", line)
+			m.log.Warnf("wrong number of parameters in file: %s Lnum: %s num : %s line: %s", file, l_num, len(f), line)
 		}
 	}
 	return nil

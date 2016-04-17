@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
-	"log"
+	//	"log"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -18,7 +18,6 @@ import (
 type HTTPConfig struct {
 	Port int `toml:"port"`
 }
-
 
 type HFunc struct {
 	Path string
@@ -156,14 +155,14 @@ func HomePage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := tmpl.Execute(w, data); err != nil {
-		errLog("home error:%s\n", err)
+		log.Errorf("home error:%s\n", err)
 	}
 }
 
 func getErrors() []string {
 	data, err := ioutil.ReadFile(errorName)
 	if err != nil {
-		errLog("error reading log file: %s error:%s\n", errorName, err)
+		log.Errorf("error reading log file: %s error:%s\n", errorName, err)
 		return []string{}
 	}
 	lines := strings.Split(string(data), "\n")
@@ -180,7 +179,7 @@ func ErrorsPage(w http.ResponseWriter, r *http.Request) {
 		LogFile: errorName,
 	}
 	if err := errs_t.Execute(w, data); err != nil {
-		errLog("home error:%s\n", err)
+		log.Errorf("home error:%s\n", err)
 	}
 }
 
@@ -214,11 +213,11 @@ func LogsPage(w http.ResponseWriter, r *http.Request) {
 		}
 		if name == errorName {
 			if err := errorLog.Truncate(0); err != nil {
-				errLog("truncate of error log failure: %v\n", err)
+				log.Errorf("truncate of error log failure: %v\n", err)
 			}
 		} else {
 			if err := os.Remove(name); err != nil {
-				errLog("delete file error: %v\n", err)
+				log.Errorf("delete file error: %v\n", err)
 			}
 		}
 		http.Redirect(w, r, "/logs", http.StatusSeeOther)
@@ -251,7 +250,7 @@ func LogsList(w http.ResponseWriter, r *http.Request) {
 			ErrLog:   errorName,
 		}
 		if err := logs.Execute(w, data); err != nil {
-			errLog("logs list error:%s\n", err)
+			log.Errorf("logs list error:%s\n", err)
 		}
 	}
 }
